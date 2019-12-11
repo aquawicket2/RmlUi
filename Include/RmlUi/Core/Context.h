@@ -237,17 +237,6 @@ public:
 		return nullptr;
 	}
 
-	DataViews& GetDataViews() {
-		return data_views;
-	}
-
-	bool UpdateDataViews() {
-		bool result = false;
-		if (DataModel* model = GetDataModel("my_model"))
-			result = data_views.Update(*model);
-		return result;
-	}
-
 protected:
 	void Release() override;
 
@@ -318,8 +307,6 @@ private:
 
 	using DataModels = UnorderedMap<String, UniquePtr<DataModel>>;
 	DataModels data_models;
-
-	DataViews data_views;
 
 	// Internal callback for when an element is detached or removed from the hierarchy.
 	void OnElementDetach(Element* element);

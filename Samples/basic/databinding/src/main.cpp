@@ -108,17 +108,18 @@ struct MyData {
 	int rating = 99;
 } my_data;
 
+Rml::Core::DataModelHandle my_model;
 
 bool SetupDataBinding(Rml::Core::Context* context)
 {
 	using Type = Rml::Core::Variant::Type;
 
-	Rml::Core::DataModelHandle model = context->CreateDataModel("my_model");
-	if (!model)
+	my_model = context->CreateDataModel("my_model");
+	if (!my_model)
 		return false;
 
-	model.BindData("hello_world", Type::STRING, &my_data.hello_world);
-	model.BindData("rating", Type::INT, &my_data.rating);
+	my_model.BindData("hello_world", Type::STRING, &my_data.hello_world);
+	my_model.BindData("rating", Type::INT, &my_data.rating);
 
 	return true;
 }
@@ -240,7 +241,7 @@ int main(int RMLUI_UNUSED_PARAMETER(argc), char** RMLUI_UNUSED_PARAMETER(argv))
 	demo_window->GetDocument()->AddEventListener(Rml::Core::EventId::Keydown, demo_window.get());
 	demo_window->GetDocument()->AddEventListener(Rml::Core::EventId::Keyup, demo_window.get());
 
-	context->UpdateDataViews();
+	my_model.UpdateViews();
 
 	Shell::EventLoop(GameLoop);
 

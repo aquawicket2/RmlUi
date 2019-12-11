@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -40,95 +40,93 @@ namespace Core {
 class Element;
 class DataModel;
 
+
 class DataViewText {
 public:
 	DataViewText(Element* in_parent_element, const String& in_text, size_t index_begin_search = 0);
 
-	operator bool() const {
-		return !data_entries.empty();
+	inline operator bool() const {
+		return !data_entries.empty() && parent_element;
 	}
 
-    bool Update(const DataModel& model);
+	inline bool IsDirty() const {
+		return is_dirty;
+	}
+
+	bool Update(const DataModel& model);
 
 private:
-    String CreateText() const;
+	String CreateText() const;
 
+	struct DataEntry {
+		size_t index = 0; // Index into 'text'
+		String name;
+		String value;
+	};
 
-    struct DataEntry {
-        size_t index = 0; // Index into 'text'
-        String name;
-        String value;
-    };
-
-
-    ObserverPtr<Element> parent_element;
-
-    String text;
-
-    std::vector<DataEntry> data_entries;
+	ObserverPtr<Element> parent_element;
+	String text;
+	std::vector<DataEntry> data_entries;
+	bool is_dirty = false;
 };
 
 
 class DataViews {
-
-    std::vector<DataViewText> text_views;
-
 public:
-    void AddTextView(DataViewText&& text_view) {
-        text_views.push_back(std::move(text_view));
-    }
 
-    bool Update(const DataModel& model)
-    {
-        bool result = false;
-        for (auto& view : text_views)
-            result |= view.Update(model);
-        return result;
-    }
+	void AddTextView(DataViewText&& text_view) {
+		text_views.push_back(std::move(text_view));
+	}
+
+	bool Update(const DataModel& model)
+	{
+		bool result = false;
+		for (auto& view : text_views)
+			result |= view.Update(model);
+		return result;
+	}
+
+private:
+	std::vector<DataViewText> text_views;
 };
-
 
 
 class DataModel {
 public:
 	using Type = Variant::Type;
-	
+
 	struct Binding {
 		Type type = Type::NONE;
 		const void* ptr = nullptr;
 	};
 
-    String GetValue(const String& name) const
-    {
-        auto it = bindings.find(name);
-        if (it != bindings.end())
-        {
-            const Binding& binding = it->second;
-
-            if (binding.type == Type::STRING)
-                return *static_cast<const String*>(binding.ptr);
-			
-            RMLUI_ERRORMSG("TODO: Implementation for the provided binding type has not been made yet.");
-        }
-		
-        return String();
-    }
+	bool GetValue(const String& name, String& out_value) const;
 
 	using Bindings = Rml::Core::UnorderedMap<Rml::Core::String, Binding>;
 
 	Bindings bindings;
+
+	DataViews views;
 };
+
 
 class DataModelHandle {
 public:
 	using Type = Variant::Type;
 
+	DataModelHandle() : model(nullptr) {}
 	DataModelHandle(DataModel* model) : model(model) {}
 
-    DataModelHandle& BindData(String name, Type type, const void* ptr)
+	DataModelHandle& BindData(String name, Type type, const void* ptr)
 	{
+		RMLUI_ASSERT(model);
 		model->bindings.emplace(name, DataModel::Binding{ type, ptr });
-        return *this;
+		return *this;
+	}
+
+	void UpdateViews() {
+		RMLUI_ASSERT(model);
+		model->views.Update(*model);
 	}
 
 	operator bool() { return model != nullptr; }
