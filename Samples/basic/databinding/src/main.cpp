@@ -102,6 +102,29 @@ private:
 };
 
 
+
+struct MyData {
+	Rml::Core::String hello_world = "Hello World!";
+	int rating = 99;
+} my_data;
+
+
+bool SetupDataBinding(Rml::Core::Context* context)
+{
+	using Type = Rml::Core::Variant::Type;
+
+	Rml::Core::DataModelHandle model = context->CreateDataModel("my_model");
+	if (!model)
+		return false;
+
+	model.BindData("hello_world", Type::STRING, &my_data.hello_world);
+	model.BindData("rating", Type::INT, &my_data.rating);
+
+	return true;
+}
+
+
+
 Rml::Core::Context* context = nullptr;
 ShellRenderInterfaceExtensions *shell_renderer;
 std::unique_ptr<DemoWindow> demo_window;
@@ -195,7 +218,8 @@ int main(int RMLUI_UNUSED_PARAMETER(argc), char** RMLUI_UNUSED_PARAMETER(argv))
 
 	// Create the main RmlUi context and set it on the shell's input layer.
 	context = Rml::Core::CreateContext("main", Rml::Core::Vector2i(width, height));
-	if (context == nullptr)
+
+	if (!context || !SetupDataBinding(context))
 	{
 		Rml::Core::Shutdown();
 		Shell::Shutdown();
@@ -215,6 +239,8 @@ int main(int RMLUI_UNUSED_PARAMETER(argc), char** RMLUI_UNUSED_PARAMETER(argv))
 	demo_window = std::make_unique<DemoWindow>("Data binding", Rml::Core::Vector2f(150, 50), context);
 	demo_window->GetDocument()->AddEventListener(Rml::Core::EventId::Keydown, demo_window.get());
 	demo_window->GetDocument()->AddEventListener(Rml::Core::EventId::Keyup, demo_window.get());
+
+	context->UpdateDataViews();
 
 	Shell::EventLoop(GameLoop);
 
