@@ -74,8 +74,8 @@ public:
 	};
 
 	Variant();
-	Variant(const Variant&);
-	Variant(Variant&&) noexcept;
+	explicit Variant(const Variant&);
+	explicit Variant(Variant&&) noexcept;
 	Variant& operator=(const Variant& copy);
 	Variant& operator=(Variant&& other) noexcept;
 	~Variant();
