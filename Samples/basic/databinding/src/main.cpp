@@ -203,12 +203,12 @@ bool SetupDataBinding(Rml::Core::Context* context)
 
 	TestDataType();
 
-	auto invader_type = my_model.RegisterType("invader");
+	auto invader_type = my_model.RegisterType("Invader");
 	invader_type.BindMember("name", &Invader::name);
 	invader_type.BindMember("sprite", &Invader::sprite);
 	invader_type.BindMember("color", &Invader::color);
 
-	my_model.BindDataTypeValue("invader", "invader", &my_data.invader);
+	my_model.BindDataTypeValue("invader", "Invader", &my_data.invader);
 
 	return true;
 }

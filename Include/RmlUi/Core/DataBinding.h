@@ -236,9 +236,12 @@ public:
 		String data_type_name;
 	};
 
-	bool GetValue(const String& name, String& out_value) const;
-	bool GetValue(const String& name, bool& out_value) const;
-	bool SetValue(const String& name, const String& value) const;
+	bool GetValue(const String& name, Variant& out_value) const;
+	bool GetValue(const String& name, String& out_string) const {
+		Variant variant;
+		return GetValue(name, variant) && variant.GetInto(out_string);
+	}
+	bool SetValue(const String& name, const Variant& value) const;
 	bool IsWritable(const String& name) const;
 
 	using Bindings = UnorderedMap<String, Binding>;
