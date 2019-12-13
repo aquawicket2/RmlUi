@@ -225,9 +225,9 @@ bool DataModel::GetValue(const String& name, String& out_value) const
 	{
 		const Binding& binding = it->second;
 
-		if (binding.type == Type::STRING)
+		if (binding.type == ValueType::String)
 			out_value = *static_cast<const String*>(binding.ptr);
-		else if (binding.type == Type::INT)
+		else if (binding.type == ValueType::Int)
 			success = TypeConverter<int, String>::Convert(*static_cast<const int*>(binding.ptr), out_value);
 		else
 		{
@@ -253,9 +253,9 @@ bool DataModel::GetValue(const String& name, bool& out_value) const
 	{
 		const Binding& binding = it->second;
 
-		if (binding.type == Type::STRING)
+		if (binding.type == ValueType::String)
 			success = TypeConverter<String, bool>::Convert(*static_cast<const String*>(binding.ptr), out_value);
-		else if (binding.type == Type::INT)
+		else if (binding.type == ValueType::Int)
 			success = TypeConverter<int, bool>::Convert(*static_cast<const int*>(binding.ptr), out_value);
 		else
 		{
@@ -284,9 +284,9 @@ bool DataModel::SetValue(const String& name, const String& value) const
 
 		if (binding.writable)
 		{
-			if (binding.type == Type::STRING)
+			if (binding.type == ValueType::String)
 				*static_cast<String*>(binding.ptr) = value;
-			else if (binding.type == Type::INT)
+			else if (binding.type == ValueType::Int)
 				result = TypeConverter<String, int>::Convert(value, *static_cast<int*>(binding.ptr));
 			else
 			{
