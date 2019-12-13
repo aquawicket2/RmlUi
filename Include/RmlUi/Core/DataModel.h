@@ -39,24 +39,107 @@
 namespace Rml {
 namespace Core {
 
+class DataBinding;
+class DataMember;
 
-class DataMemberGetSet {
+
+class DataModel {
 public:
-	virtual ~DataMemberGetSet() = default;
-	virtual bool Get(const void* object, Rml::Core::Variant& out_value) = 0;
-	virtual bool Set(void* object, const Rml::Core::Variant& in_value) = 0;
+	bool GetValue(const String& name, Variant& out_value) const;
+	bool SetValue(const String& name, const Variant& value) const;
+
+	template<typename T>
+	bool GetValue(const String& name, T& out_value) const {
+		Variant variant;
+		return GetValue(name, variant) && variant.GetInto<T>(out_value);
+	}
+
+	using Bindings = UnorderedMap<String, UniquePtr<DataBinding>>;
+	Bindings bindings;
+
+	DataControllers controllers;
+	DataViews views;
+
+	using DataMembers = SmallUnorderedMap<String, UniquePtr<DataMember>>;
+	using DataTypes = UnorderedMap<String, DataMembers>;
+
+	DataTypes data_types;
 };
 
-template <typename Object, typename MemberType>
-class DataMemberGetSetDefault : public DataMemberGetSet {
-public:
-	DataMemberGetSetDefault(MemberType Object::* member_ptr) : member_ptr(member_ptr) {}
 
-	bool Get(const void* object, Rml::Core::Variant& out_value) override {
+
+class DataBinding {
+public:
+	DataBinding(void* ptr) : ptr(ptr) {}
+	virtual ~DataBinding() = default;
+
+	inline bool Get(Variant& out_value) {
+		return Get(ptr, out_value);
+	}
+	inline bool Set(const Variant& in_value) {
+		return Set(ptr, in_value);
+	}
+
+protected:
+	virtual bool Get(const void* object, Variant& out_value) = 0;
+	virtual bool Set(void* object, const Variant& in_value) = 0;
+
+private:
+	void* ptr;
+};
+
+
+class DataMember {
+public:
+	virtual ~DataMember() = default;
+	virtual bool Get(const void* object, Variant& out_value) = 0;
+	virtual bool Set(void* object, const Variant& in_value) = 0;
+};
+
+
+
+template<typename T>
+class DataBindingDefault : public DataBinding {
+public:
+	DataBindingDefault(void* ptr) : DataBinding(ptr) {}
+
+private:
+	bool Get(const void* object, Variant& out_value) override {
+		out_value = *static_cast<const T*>(object);
+		return true;
+	}
+	bool Set(void* object, const Variant& in_value) override {
+		T& target = *static_cast<T*>(object);
+		return in_value.GetInto<T>(target);
+	}
+};
+
+class DataBindingMember : public DataBinding {
+public:
+	DataBindingMember(void* object, DataMember* member) : DataBinding(object), member(member) {}
+
+private:
+	bool Get(const void* object, Variant& out_value) override {
+		return member->Get(object, out_value);
+	}
+	bool Set(void* object, const Variant& in_value) override {
+		return member->Set(object, in_value);
+	}
+
+	DataMember* member;
+};
+
+
+template <typename Object, typename MemberType>
+class DataMemberDefault : public DataMember {
+public:
+	DataMemberDefault(MemberType Object::* member_ptr) : member_ptr(member_ptr) {}
+
+	bool Get(const void* object, Variant& out_value) override {
 		out_value = static_cast<const Object*>(object)->*member_ptr;
 		return true;
 	}
-	bool Set(void* object, const Rml::Core::Variant& in_value) override {
+	bool Set(void* object, const Variant& in_value) override {
 		MemberType& target = static_cast<Object*>(object)->*member_ptr;
 		return in_value.GetInto<MemberType>(target);
 	}
@@ -66,59 +149,20 @@ private:
 };
 
 
-
-
-
-
-enum class ValueType { None, String, Int, Bool, Color, Array, Type };
-
-
-class DataModel {
-public:
-	struct Binding {
-		ValueType type = ValueType::None;
-		void* ptr = nullptr;
-		bool writable = false;
-		String data_type_name;
-	};
-
-	bool GetValue(const String& name, Variant& out_value) const;
-	bool GetValue(const String& name, String& out_string) const {
-		Variant variant;
-		return GetValue(name, variant) && variant.GetInto(out_string);
-	}
-	bool SetValue(const String& name, const Variant& value) const;
-	bool IsWritable(const String& name) const;
-
-	using Bindings = UnorderedMap<String, Binding>;
-	Bindings bindings;
-
-	DataControllers controllers;
-	DataViews views;
-
-	using DataTypeMembers = SmallUnorderedMap<String, UniquePtr<DataMemberGetSet>>;
-	using DataTypes = UnorderedMap<String, DataTypeMembers>;
-
-	DataTypes data_types;
-};
-
-
-
-
 class DataTypeHandle {
 public:
-	DataTypeHandle(DataModel::DataTypeMembers* members) : members(members) {}
+	DataTypeHandle(DataModel::DataMembers* members) : members(members) {}
 
 	template <typename Object, typename MemberType>
-	DataTypeHandle& BindMember(String name, MemberType Object::* member_ptr)
+	DataTypeHandle& RegisterMember(String name, MemberType Object::* member_ptr)
 	{
 		RMLUI_ASSERT(members);
-		members->emplace(name, std::make_unique<DataMemberGetSetDefault<Object, MemberType>>(member_ptr));
+		members->emplace(name, std::make_unique<DataMemberDefault<Object, MemberType>>(member_ptr));
 		return *this;
 	}
 
 private:
-	DataModel::DataTypeMembers* members;
+	DataModel::DataMembers* members;
 };
 
 
@@ -127,31 +171,44 @@ public:
 	DataModelHandle() : model(nullptr) {}
 	DataModelHandle(DataModel* model) : model(model) {}
 
-	DataModelHandle& BindValue(String name, ValueType type, void* ptr, bool writable = false)
+	template <typename T>
+	DataModelHandle& BindValue(String name, T* object)
 	{
 		RMLUI_ASSERT(model);
-		model->bindings.emplace(name, DataModel::Binding{ type, ptr, writable });
+		model->bindings.emplace(name, std::make_unique<DataBindingDefault<T>>( object ));
 		return *this;
 	}
 
-	DataModelHandle& BindDataTypeValue(String name, String type_name, void* ptr, bool writable = false)
+	DataModelHandle& BindTypeValue(String name, String type_name, void* object)
 	{
+		RMLUI_ASSERT(model);
 		// Todo: We can make this type safe, removing the need for type_name.
 		//   Make this a templated function, create another templated "family" class which assigns
 		//   a unique id for each new type encountered, look up the type name there. Or use the ID as
 		//   the look-up key.
-		RMLUI_ASSERT(model);
-		model->bindings.emplace(name, DataModel::Binding{ ValueType::Type, ptr, writable, type_name });
+
+		auto it = model->data_types.find(type_name);
+		if (it != model->data_types.end())
+		{
+			auto& members = it->second;
+			for (auto& pair : members)
+			{
+				const String full_name = name + '.' + pair.first;
+				DataMember* member = pair.second.get();
+				bool inserted = model->bindings.emplace(full_name, std::make_unique<DataBindingMember>(object, member)).second;
+				RMLUI_ASSERT(inserted);
+			}
+		}
+
 		return *this;
 	}
 
 	DataTypeHandle RegisterType(String name)
 	{
 		RMLUI_ASSERT(model);
-		auto result = model->data_types.emplace(name, DataModel::DataTypeMembers() );
+		auto result = model->data_types.emplace(name, DataModel::DataMembers() );
 		return DataTypeHandle(&result.first->second);
 	}
-
 
 	void UpdateControllers() {
 		RMLUI_ASSERT(model);

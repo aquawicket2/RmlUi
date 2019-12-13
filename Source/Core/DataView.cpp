@@ -112,7 +112,7 @@ bool DataViewText::Update(const DataModel& model)
 		}
 		else
 		{
-			Log::Message(Log::LT_WARNING, "Could not update data view text, parent element no longer valid. Was it destroyed?");
+			Log::Message(Log::LT_WARNING, "Could not update data view text, element no longer valid. Was it destroyed?");
 		}
 	}
 
@@ -178,12 +178,9 @@ DataViewIf::DataViewIf(const DataModel& model, Element* element, const String& b
 bool DataViewIf::Update(const DataModel& model)
 {
 	bool result = false;
-	Variant variant;
-	int int_value = 0;
-
-	if (model.GetValue(binding_name, variant) && variant.GetInto(int_value))
+	bool value = false;
+	if (model.GetValue(binding_name, value))
 	{
-		bool value = (int_value != 0);
 		bool is_visible = (element->GetLocalStyleProperties().count(PropertyId::Display) == 0);
 		if(is_visible != value)
 		{

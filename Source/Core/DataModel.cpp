@@ -33,52 +33,18 @@ namespace Rml {
 namespace Core {
 
 
-bool DataModel::GetValue(const String& in_name, Variant& out_value) const
+bool DataModel::GetValue(const String& name, Variant& out_value) const
 {
 	bool success = true;
-
-	String name = in_name;
-	String member;
-
-	size_t i_dot = name.find('.');
-	if (i_dot != String::npos)
-	{
-		name = in_name.substr(0, i_dot);
-		member = in_name.substr(i_dot + 1);
-	}
 
 	auto it = bindings.find(name);
 	if (it != bindings.end())
 	{
-		const Binding& binding = it->second;
+		DataBinding& binding = *it->second;
 
-		if (binding.type == ValueType::String)
-			out_value = *static_cast<const String*>(binding.ptr);
-		else if (binding.type == ValueType::Int)
-			out_value = *static_cast<const int*>(binding.ptr);
-		else if (binding.type == ValueType::Type)
-		{
-			success = false;
-			auto it_type = data_types.find(binding.data_type_name);
-			if(it_type != data_types.end())
-			{
-				const auto& members = it_type->second;
-				auto it_member = members.find(member);
-				if (it_member != members.end())
-				{
-					auto member_getset_ptr = it_member->second.get();
-					RMLUI_ASSERT(member_getset_ptr);
-					success = member_getset_ptr->Get(binding.ptr, out_value);
-				}
-			}
-			if(!success)
-				Log::Message(Log::LT_WARNING, "Could not get value from member '%s' in value named '%s' in data model.", member.c_str(), name.c_str());
-		}
-		else
-		{
-			RMLUI_ERRORMSG("TODO: Implementation for the provided binding type has not been made yet.");
-			success = false;
-		}
+		success = binding.Get(out_value);
+		if (!success)
+			Log::Message(Log::LT_WARNING, "Could not get value from '%s' in data model.", name.c_str());
 	}
 	else
 	{
@@ -92,46 +58,24 @@ bool DataModel::GetValue(const String& in_name, Variant& out_value) const
 
 bool DataModel::SetValue(const String& name, const Variant& value) const
 {
-	bool result = true;
+	bool success = true;
 
 	auto it = bindings.find(name);
 	if (it != bindings.end())
 	{
-		const Binding& binding = it->second;
+		DataBinding& binding = *it->second;
 
-		if (binding.writable)
-		{
-			if (binding.type == ValueType::String)
-				result = value.GetInto(*static_cast<String*>(binding.ptr));
-			else if (binding.type == ValueType::Int)
-				result = value.GetInto(*static_cast<int*>(binding.ptr));
-			else
-			{
-				RMLUI_ERRORMSG("TODO: Implementation for the provided binding type has not been made yet.");
-				result = false;
-			}
-		}
-		else
-		{
-			RMLUI_ERRORMSG("Controller attempted to write to a non-writable binding.");
-			result = false;
-		}
+		success = binding.Set(value);
+		if (!success)
+			Log::Message(Log::LT_WARNING, "Could not set value to '%s' in data model.", name.c_str());
 	}
 	else
 	{
 		Log::Message(Log::LT_WARNING, "Could not find value named '%s' in data model.", name.c_str());
-		result = false;
+		success = false;
 	}
-	return false;
-}
 
-bool DataModel::IsWritable(const String& name) const
-{
-	bool result = false;
-	auto it = bindings.find(name);
-	if (it != bindings.end())
-		result = it->second.writable;
-	return result;
+	return success;
 }
 
 }
