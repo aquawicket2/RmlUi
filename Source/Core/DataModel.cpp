@@ -37,6 +37,23 @@ bool DataModel::GetValue(const String& name, Variant& out_value) const
 {
 	bool success = true;
 
+	auto pos = name.find("it");
+	if (pos == 0)
+	{
+		if (iterator.current_index >= 0)
+		{
+			auto it_container = containers.find(iterator.container_name);
+			if (it_container != containers.end())
+			{
+				DataBindingContext context({ DataBindingContext::Item{ "", iterator.current_index} });
+
+				if (it_container->second->Get(out_value, context))
+					return true;
+			}
+		}
+		return false;
+	}
+
 	auto it = bindings.find(name);
 	if (it != bindings.end())
 	{

@@ -115,6 +115,23 @@ private:
 };
 
 
+class DataViewFor {
+public:
+	DataViewFor(const DataModel& model, Element* element, const String& binding_name);
+
+	inline operator bool() const {
+		return !binding_name.empty() && element;
+	}
+	bool Update(const DataModel& model);
+
+private:
+	ObserverPtr<Element> element;
+	String binding_name;
+
+	std::vector<Element*> elements;
+};
+
+
 class DataViews {
 public:
 
@@ -124,11 +141,14 @@ public:
 	void AddView(DataViewAttribute&& view) {
 		attribute_views.push_back(std::move(view));
 	}
+	void AddView(DataViewStyle&& view) {
+		style_views.push_back(std::move(view));
+	}
 	void AddView(DataViewIf&& view) {
 		if_views.push_back(std::move(view));
 	}
-	void AddView(DataViewStyle&& view) {
-		style_views.push_back(std::move(view));
+	void AddView(DataViewFor&& view) {
+		for_views.push_back(std::move(view));
 	}
 
 	bool Update(const DataModel& model)
@@ -138,9 +158,11 @@ public:
 			result |= view.Update(model);
 		for (auto& view : attribute_views)
 			result |= view.Update(model);
+		for (auto& view : style_views)
+			result |= view.Update(model);
 		for (auto& view : if_views)
 			result |= view.Update(model);
-		for (auto& view : style_views)
+		for (auto& view : for_views)
 			result |= view.Update(model);
 		return result;
 	}
@@ -148,8 +170,9 @@ public:
 private:
 	std::vector<DataViewText> text_views;
 	std::vector<DataViewAttribute> attribute_views;
-	std::vector<DataViewIf> if_views;
 	std::vector<DataViewStyle> style_views;
+	std::vector<DataViewIf> if_views;
+	std::vector<DataViewFor> for_views;
 };
 
 }

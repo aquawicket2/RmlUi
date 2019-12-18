@@ -220,5 +220,59 @@ bool DataViewIf::Update(const DataModel& model)
 	return result;
 }
 
+
+
+DataViewFor::DataViewFor(const DataModel& model, Element* element, const String& binding_name) : element(element->GetObserverPtr()), binding_name(binding_name)
+{
+	element->SetProperty(PropertyId::Display, Property(Style::Display::None));
+	//Update(model);
+}
+
+
+
+bool DataViewFor::Update(const DataModel& model)
+{
+	bool result = false;
+	bool value = false;
+
+	model.iterator.container_name = binding_name;
+
+	auto rml = element->GetInnerRML();
+
+	const int size = model.containers.find(binding_name)->second->Size();
+	const int num_elements = (int)elements.size();
+
+	for (int i = 0; i < Math::Max(size, num_elements); i++)
+	{
+		if (i >= num_elements)
+		{
+			auto new_el = Factory::InstanceElement(nullptr, element->GetTagName(), element->GetTagName(), XMLAttributes());
+			new_el->SetDataModel((DataModel*)(&model));
+			auto new_el_ptr = element->GetParentNode()->InsertBefore(std::move(new_el), element.get());
+			elements.push_back(new_el_ptr);
+			RMLUI_ASSERT(i < (int)elements.size());
+		}
+		if (i >= size)
+		{
+			elements[i]->GetParentNode()->RemoveChild(elements[i]).reset();
+			elements[i] = nullptr;
+		}
+	}
+
+	if (num_elements > size)
+		elements.resize(size);
+
+	for (int i = 0; i < size; i++)
+	{
+		model.iterator.current_index = i;
+		elements[i]->SetInnerRML(rml);
+	}
+
+	model.iterator.container_name = String();
+	model.iterator.current_index = -1;
+
+	return result;
+}
+
 }
 }

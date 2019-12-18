@@ -240,6 +240,8 @@ ElementPtr Factory::InstanceElement(Element* parent, const String& instancer_nam
 			ElementUtilities::BindEventAttributes(element.get());
 
 
+			// TODO: Relies on parent, a bit hacky.
+			if (parent && !parent->HasAttribute("data-for"))
 			{
 				// Look for the data-model attribute or otherwise copy it from the parent element
 				auto it = attributes.find("data-model");
@@ -295,14 +297,6 @@ ElementPtr Factory::InstanceElement(Element* parent, const String& instancer_nam
 								else
 									Log::Message(Log::LT_WARNING, "Could not add data-attr controller to element '%s'.", parent->GetAddress().c_str());
 							}
-							else if (data_type == "if")
-							{
-								DataViewIf view(*data_model, element.get(), value_bind_name);
-								if (view)
-									data_model->views.AddView(std::move(view));
-								else
-									Log::Message(Log::LT_WARNING, "Could not add data-if view to element '%s'.", parent->GetAddress().c_str());
-							}
 							else if (data_type == "style")
 							{
 								const String property_name = name.substr(5 + data_type.size() + 1);
@@ -312,6 +306,22 @@ ElementPtr Factory::InstanceElement(Element* parent, const String& instancer_nam
 									data_model->views.AddView(std::move(view));
 								else
 									Log::Message(Log::LT_WARNING, "Could not add data-style view to element '%s'.", parent->GetAddress().c_str());
+							}
+							else if (data_type == "if")
+							{
+								DataViewIf view(*data_model, element.get(), value_bind_name);
+								if (view)
+									data_model->views.AddView(std::move(view));
+								else
+									Log::Message(Log::LT_WARNING, "Could not add data-if view to element '%s'.", parent->GetAddress().c_str());
+							}
+							else if (data_type == "for")
+							{
+								DataViewFor view(*data_model, element.get(), value_bind_name);
+								if (view)
+									data_model->views.AddView(std::move(view));
+								else
+									Log::Message(Log::LT_WARNING, "Could not add data-for view to element '%s'.", parent->GetAddress().c_str());
 							}
 						}
 					}

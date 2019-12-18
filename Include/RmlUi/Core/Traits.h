@@ -71,6 +71,26 @@ public:
 	}
 };
 
+
+template<typename T>
+class Family {
+public:
+	static int Id() {
+		return GetId< std::remove_cv< std::remove_reference< T >::type >::type >();
+	}
+
+private:
+	template<typename T>
+	static int GetId() {
+		static int id = GetNewId();
+		return id;
+	}
+	static int GetNewId() {
+		static int id = 0;
+		return id++;
+	}
+};
+
 }
 }
 
