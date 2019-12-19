@@ -298,7 +298,7 @@ public:
 	{
 		RMLUI_ASSERT(model);
 
-		int id = Family< std::remove_pointer< T >::type >::Id();
+		int id = Family< typename std::remove_pointer< T >::type >::Id();
 
 		auto it = model->data_types.find(id);
 		if (it != model->data_types.end())

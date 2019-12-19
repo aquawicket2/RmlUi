@@ -41,8 +41,11 @@ class Element;
 class ElementText;
 class DataModel;
 
+class RMLUICORE_API DataView {
 
-class DataViewText {
+};
+
+class DataViewText : public DataView {
 public:
 	DataViewText(const DataModel& model, ElementText* in_element, const String& in_text, size_t index_begin_search = 0);
 
@@ -68,7 +71,7 @@ private:
 
 
 
-class DataViewAttribute {
+class DataViewAttribute : public DataView {
 public:
 	DataViewAttribute(const DataModel& model, Element* element, const String& binding_name, const String& attribute_name);
 
@@ -84,7 +87,7 @@ private:
 };
 
 
-class DataViewStyle {
+class DataViewStyle : public DataView {
 public:
 	DataViewStyle(const DataModel& model, Element* element, const String& binding_name, const String& property_name);
 
@@ -100,7 +103,7 @@ private:
 };
 
 
-class DataViewIf {
+class DataViewIf : public DataView {
 public:
 	DataViewIf(const DataModel& model, Element* element, const String& binding_name);
 
@@ -115,7 +118,7 @@ private:
 };
 
 
-class DataViewFor {
+class DataViewFor : public DataView {
 public:
 	DataViewFor(const DataModel& model, Element* element, const String& binding_name, const String& rml_contents);
 
@@ -134,7 +137,7 @@ private:
 };
 
 
-class DataViews {
+class RMLUICORE_API DataViews {
 public:
 
 	void AddView(DataViewText&& view) {
