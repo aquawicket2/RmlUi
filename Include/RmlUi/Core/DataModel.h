@@ -46,12 +46,6 @@ class DataContainer;
 class Element;
 
 
-struct DataIterator {
-	String container_name;
-	int current_index = -1;
-};
-
-
 class DataModel {
 public:
 	bool GetValue(const String& name, Variant& out_value) const;
@@ -63,6 +57,9 @@ public:
 		return GetValue(name, variant) && variant.GetInto<T>(out_value);
 	}
 
+	String ResolveVariableName(const String& raw_name, Element* parent) const;
+
+
 	using Bindings = UnorderedMap<String, UniquePtr<DataBinding>>;
 	Bindings bindings;
 
@@ -71,13 +68,13 @@ public:
 
 	using DataMembers = SmallUnorderedMap<String, UniquePtr<DataMember>>;
 	using DataTypes = UnorderedMap<int, DataMembers>;
-
 	DataTypes data_types;
 
 	using DataContainers = UnorderedMap<String, UniquePtr<DataContainer>>;
 	DataContainers containers;
 
-	mutable DataIterator iterator;
+	using ScopedAliases = UnorderedMap< Element*, SmallUnorderedMap<String, String> >;
+	mutable ScopedAliases aliases;
 };
 
 class DataBinding {

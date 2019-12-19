@@ -578,7 +578,7 @@ public:
 
 
 	// TODO: Temporary, make private / remove.
-	const DataModel* GetDataModel() const { return data_model; }
+	DataModel* GetDataModel() { return data_model; }
 	void SetDataModel(DataModel* new_data_model) { data_model = new_data_model; }
 
 protected:

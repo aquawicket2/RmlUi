@@ -117,7 +117,7 @@ private:
 
 class DataViewFor {
 public:
-	DataViewFor(const DataModel& model, Element* element, const String& binding_name);
+	DataViewFor(const DataModel& model, Element* element, const String& binding_name, const String& rml_contents);
 
 	inline operator bool() const {
 		return !binding_name.empty() && element;
@@ -127,6 +127,8 @@ public:
 private:
 	ObserverPtr<Element> element;
 	String binding_name;
+	String rml_contents;
+	ElementAttributes attributes;
 
 	std::vector<Element*> elements;
 };
