@@ -205,7 +205,7 @@ private:
 			Log::Message(Log::LT_WARNING, "Data container index out of bounds.");
 			return false;
 		}
-		container[item.index] = in_value.Get<T::value_type>();
+		container[item.index] = in_value.Get< typename T::value_type >();
 		return true;
 	}
 	int Size(void* container_ptr) override {
