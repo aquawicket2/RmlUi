@@ -150,439 +150,11 @@ namespace Data {
 			|| std::is_convertible<T, Vector3f>::value
 			|| std::is_convertible<T, Vector4f>::value
 			|| std::is_convertible<T, Colourb>::value
+			|| std::is_convertible<T, Colourf>::value
 			|| std::is_convertible<T, char*>::value
 			|| std::is_convertible<T, void*>::value;
 	};
 
-
-	enum class VariableType { Scalar, Array, Struct };
-
-	class Variable {
-	public:
-		virtual ~Variable() = default;
-		VariableType Type() const { return type; }
-
-	protected:
-		Variable(VariableType type) : type(type) {}
-
-	private:
-		VariableType type;
-	};
-
-
-	class VariableInstancer {
-	public:
-		virtual ~VariableInstancer() = default;
-		virtual UniquePtr<Variable> Instance(void* ptr) = 0;
-	};
-
-
-
-	class Scalar : public Variable {
-	public:
-		virtual bool Get(Variant& variant) = 0;
-		virtual bool Set(const Variant& variant) = 0;
-
-	protected:
-		Scalar() : Variable(VariableType::Scalar) {}
-	};
-
-	template<typename T>
-	class ScalarDefault final : public Scalar {
-	public:
-		ScalarDefault(T* ptr) : ptr(ptr) { RMLUI_ASSERT(ptr); }
-		bool Get(Variant& variant) override {
-			variant = *ptr;
-			return true;
-		}
-		bool Set(const Variant& variant) override {
-			return variant.GetInto<T>(*ptr);
-		}
-	private:
-		T* ptr;
-	};
-
-	class Array : public Variable {
-	public:
-		Variable* operator[](const int index)
-		{
-			void* ptr = GetAddress(index);
-			if (!ptr)
-			{
-				if (index >= 0)
-					items.clear();
-				return nullptr;
-			}
-
-			if (index >= (int)items.size())
-				items.resize(Size());
-
-			PtrVariable& item = items[index];
-			if (item.ptr != ptr)
-			{
-				item.ptr = ptr;
-				item.variable = item_instancer->Instance(ptr);
-			}
-
-			return item.variable.get();
-		}
-
-		virtual int Size() const = 0;
-
-	protected:
-		Array(VariableInstancer* item_instancer) : Variable(VariableType::Array), item_instancer(item_instancer) {}
-		
-		virtual void* GetAddress(int index) const = 0;
-
-	private:
-		struct PtrVariable{ void* ptr = nullptr; UniquePtr<Variable> variable; };
-		VariableInstancer* item_instancer;
-		std::vector<PtrVariable> items;
-	};
-
-	template<typename Container>
-	class ArrayDefault final : public Array {
-	public:
-		ArrayDefault(Container* ptr, VariableInstancer* item_instancer) : Array(item_instancer), ptr(ptr) {  }
-
-		int Size() const override {
-			return (int)ptr->size();
-		}
-
-	protected:
-		void* GetAddress(int index) const override
-		{
-			if (index < 0 || index >= (int)ptr->size())
-			{
-				Log::Message(Log::LT_WARNING, "Data array index out of bounds.");
-				return nullptr;
-			}
-			return &((*ptr)[index]);
-		}
-
-	private:
-		Container* ptr;
-	};
-
-
-
-	class Struct final : public Variable {
-	public:
-		Struct(SmallUnorderedMap<String, UniquePtr<Variable>>&& members) : Variable(VariableType::Struct), members(std::move(members))
-		{}
-
-		Variable* operator[](const String& name) const {
-			auto it = members.find(name);
-			if (it == members.end())
-				return nullptr;
-			return it->second.get();
-		}
-
-	private:
-		SmallUnorderedMap<String, UniquePtr<Variable>> members;
-	};
-
-
-
-	template<typename T>
-	class ScalarInstancer final : public VariableInstancer {
-	public:
-		UniquePtr<Variable> Instance(void* ptr) override {
-			return std::make_unique<ScalarDefault<T>>( static_cast<T*>(ptr) );
-		}
-	};
-
-
-	template<typename Container>
-	class ArrayInstancer final : public VariableInstancer {
-	public:
-		ArrayInstancer(VariableInstancer* item_instancer) : item_instancer(item_instancer) {}
-
-		UniquePtr<Variable> Instance(void* ptr) override {
-			return std::make_unique<ArrayDefault<Container>>(static_cast<Container*>(ptr), item_instancer);
-		}
-	private:
-		VariableInstancer* item_instancer;
-	};
-
-
-	template <typename Object>
-	class StructInstancer final : public VariableInstancer {
-	public:
-		StructInstancer() {}
-
-		template <typename MemberType>
-		void AddMember(const String& name, MemberType Object::* member_ptr, VariableInstancer* instancer) {
-			RMLUI_ASSERT(instancer && instancer != this);
-			members.emplace(name, std::make_unique< MemberInstancer<Object, MemberType> >(member_ptr, instancer));
-		}
-
-		UniquePtr<Variable> Instance(void* ptr_to_struct) override {
-			SmallUnorderedMap<String, UniquePtr<Variable>> variable_members;
-			variable_members.reserve(members.size());
-			for (auto& member : members)
-			{
-				auto variable = member.second->Instance(ptr_to_struct);
-				bool inserted = variable_members.emplace(member.first, std::move(variable)).second;
-				RMLUI_ASSERT(inserted);
-			}
-			return std::make_unique< Struct >(std::move(variable_members));
-		}
-	private:
-		class MemberInstancerBase {
-		public:
-			virtual ~MemberInstancerBase() = default;
-			virtual UniquePtr<Variable> Instance(void* base_ptr) = 0;
-		};
-
-		template <typename Object, typename MemberType>
-		class MemberInstancer final : public MemberInstancerBase {
-		public:
-			MemberInstancer(MemberType Object::* member_ptr, VariableInstancer* instancer) : member_ptr(member_ptr), instancer(instancer) {}
-
-			UniquePtr<Variable> Instance(void* base_ptr) override {
-				return instancer->Instance(&(static_cast<Object*>(base_ptr)->*member_ptr));
-			}
-
-		private:
-			MemberType Object::* member_ptr;
-			VariableInstancer* instancer;
-		};
-
-		SmallUnorderedMap<String, UniquePtr<MemberInstancerBase>> members;
-	};
-
-
-	class TypeRegister;
-
-	class TypeHandleBase {
-	public:
-		operator bool() const { return type_register && GetInstancer(); }
-
-		virtual VariableInstancer* GetInstancer() const = 0;
-
-	protected:
-		TypeHandleBase(TypeRegister* type_register) : type_register(type_register) {}
-		TypeRegister* type_register;
-	};
-
-	class StructTypeHandleBase : public TypeHandleBase {
-	protected:
-		StructTypeHandleBase(TypeRegister* type_register) : TypeHandleBase(type_register) {}
-	};
-
-	class ArrayTypeHandleBase : public TypeHandleBase {
-	protected:
-		ArrayTypeHandleBase(TypeRegister* type_register) : TypeHandleBase(type_register) {}
-	};
-
-	template<typename Object>
-	class StructTypeHandle final : public StructTypeHandleBase {
-	public:
-		StructTypeHandle(TypeRegister* type_register, StructInstancer<Object>* instancer) : StructTypeHandleBase(type_register), instancer(instancer) {}
-
-		template <typename MemberType>
-		StructTypeHandle<Object>& AddScalar(const String& name, MemberType Object::* member_ptr) {
-			static_assert(is_valid_scalar<MemberType>::value, "Not a valid scalar member type. Did you mean to add a struct member?");
-			VariableInstancer* member_instancer = type_register->GetOrAddScalar<MemberType>();
-			instancer->AddMember(name, member_ptr, member_instancer);
-			return *this;
-		}
-
-		template <typename MemberType>
-		StructTypeHandle<Object>& AddStruct(const String& name, MemberType Object::* member_ptr, const StructTypeHandleBase& struct_handle) {
-			RMLUI_ASSERTMSG(type_register->Get<MemberType>() == struct_handle.GetInstancer(), "Mismatch between member type and provided struct instancer.");
-			instancer->AddMember(name, member_ptr, struct_handle.GetInstancer());
-			return *this;
-		}
-
-		template <typename MemberType>
-		StructTypeHandle<Object>& AddArray(const String& name, MemberType Object::* member_ptr, const ArrayTypeHandleBase& array_handle) {
-			RMLUI_ASSERTMSG(type_register->Get<MemberType>() == array_handle.GetInstancer(), "Mismatch between member type and provided struct instancer.");
-			instancer->AddMember(name, member_ptr, array_handle.GetInstancer());
-			return *this;
-		}
-
-		VariableInstancer* GetInstancer() const override {
-			return instancer;
-		}
-	private:
-		StructInstancer<Object>* instancer;
-	};
-
-	template<typename Container>
-	class ArrayTypeHandle final : public ArrayTypeHandleBase {
-	public:
-		ArrayTypeHandle(TypeRegister* type_register, ArrayInstancer<Container>* instancer) : ArrayTypeHandleBase(type_register), instancer(instancer) {}
-
-		VariableInstancer* GetInstancer() const override {
-			return instancer;
-		}
-	private:
-		ArrayInstancer<Container>* instancer;
-	};
-
-
-
-
-
-
-	class TypeRegister {
-	public:
-		template<typename T>
-		StructTypeHandle<T> RegisterStruct()
-		{
-			static_assert(std::is_class<T>::value, "Type must be a struct or class type.");
-			int family_id = Family<T>::Id();
-
-			auto struct_instancer = std::make_unique<StructInstancer<T>>();
-			StructInstancer<T>* struct_instancer_raw = struct_instancer.get();
-
-			auto result = type_register.emplace(family_id, std::move(struct_instancer));
-			auto& it = result.first;
-			bool inserted = result.second;
-			if (!inserted)
-			{
-				RMLUI_ERRORMSG("Type already declared");
-				return StructTypeHandle<T>(nullptr, nullptr);
-			}
-			
-			return StructTypeHandle<T>(this, struct_instancer_raw);
-		}
-
-		template<typename Container>
-		ArrayTypeHandle<Container> RegisterArrayOfScalar()
-		{
-			using value_type = typename Container::value_type;
-			static_assert(is_valid_scalar<value_type>::value, "Underlying value type of array is not a valid scalar type. Did you mean to add a struct or array?");
-
-			VariableInstancer* value_instancer = GetOrAddScalar<value_type>();
-
-			return RegisterArray<Container>(value_instancer);
-		}
-
-		template<typename Container>
-		ArrayTypeHandle<Container> RegisterArrayOfStruct(const StructTypeHandleBase& struct_handle)
-		{
-			using value_type = typename Container::value_type;
-			VariableInstancer* value_instancer = Get<value_type>();
-			bool correct_handle = (struct_handle.GetInstancer() == value_instancer);
-			
-			RMLUI_ASSERTMSG(value_instancer, "Underlying value type of array has not been registered.");
-			RMLUI_ASSERTMSG(correct_handle, "Improper struct handle provided.");
-			if (!value_instancer || !correct_handle)
-				return ArrayTypeHandle<Container>(nullptr, nullptr);
-
-			return RegisterArray<Container>(value_instancer);
-		}
-
-		template<typename Container>
-		ArrayTypeHandle<Container> RegisterArrayOfArray(const ArrayTypeHandleBase& array_handle)
-		{
-			using value_type = typename Container::value_type;
-			VariableInstancer* value_instancer = Get<value_type>();
-			bool correct_handle = (array_handle.GetInstancer() == value_instancer);
-
-			RMLUI_ASSERTMSG(value_instancer, "Underlying value type of array has not been registered.");
-			RMLUI_ASSERTMSG(correct_handle, "Improper struct handle provided.");
-			if (!value_instancer || !correct_handle)
-				return ArrayTypeHandle<Container>(nullptr, nullptr);
-
-			return RegisterArray<Container>(value_instancer);
-			using value_type = typename Container::value_type;
-			VariableInstancer* value_instancer = Get<value_type>();
-			if (!value_instancer)
-			{
-				RMLUI_ERRORMSG("Underlying value type of array has not been registered.");
-				return ArrayTypeHandle<Container>(nullptr, nullptr);
-			}
-			return RegisterArray<Container>(value_instancer);
-		}
-
-		template<typename T>
-		VariableInstancer* GetOrAddScalar()
-		{
-			int id = Family<T>::Id();
-
-			auto result = type_register.emplace(id, nullptr);
-			auto& it = result.first;
-			bool inserted = result.second;
-
-			if (inserted)
-			{
-				it->second = std::make_unique<ScalarInstancer<T>>();
-			}
-
-			return it->second.get();
-		}
-
-		template<typename T>
-		VariableInstancer* Get() const
-		{
-			int id = Family<T>::Id();
-			auto it = type_register.find(id);
-			if (it == type_register.end())
-				return nullptr;
-
-			return it->second.get();
-		}
-
-		template<typename T>
-		UniquePtr<Variable> Instance(T* ptr) const
-		{
-			if (auto instancer = Get<T>())
-				return instancer->Instance(ptr);
-			return nullptr;
-		}
-
-	private:
-		template<typename Container>
-		ArrayTypeHandle<Container> RegisterArray(VariableInstancer* value_instancer)
-		{
-			int container_id = Family<Container>::Id();
-
-			auto result = type_register.emplace(container_id, std::make_unique<ArrayInstancer<Container>>(value_instancer));
-			auto& it = result.first;
-			bool inserted = result.second;
-			if (!inserted)
-			{
-				RMLUI_ERRORMSG("Array type already declared.");
-				return ArrayTypeHandle<Container>(nullptr, nullptr);
-			}
-
-			return ArrayTypeHandle<Container>(this, static_cast<ArrayInstancer<Container>*>(it->second.get()));
-		}
-
-		UnorderedMap<int, UniquePtr<VariableInstancer>> type_register;
-	};
-
-
-
-	class Model {
-	public:
-		Model(TypeRegister* type_register) : type_register(type_register) {}
-
-		template<typename T> bool BindScalar(String name, T* ptr) {
-			return Bind(name, ptr, type_register->GetOrAddScalar<T>());
-		}
-		template<typename T> bool BindStruct(String name, T* ptr) {
-			return Bind(name, ptr, type_register->Get<T>());
-		}
-		template<typename T> bool BindArray(String name, T* ptr) {
-			return Bind(name, ptr, type_register->Get<T>());
-		}
-
-		Variant GetValue(const String& address_str) const;
-		bool SetValue(const String& address_str, const Variant& variant) const;
-
-	private:
-		bool Bind(String name, void* ptr, VariableInstancer* instancer);
-
-		Variable* GetVariable(const String& address_str) const;
-
-		TypeRegister* type_register;
-		UnorderedMap<String, UniquePtr<Variable>> variables;
-	};
 
 
 	struct AddressEntry {
@@ -593,6 +165,390 @@ namespace Data {
 	};
 	using Address = std::vector<AddressEntry>;
 
+	class Variable;
+	enum class VariableType { Scalar, Array, Struct };
+
+
+	class VariableDefinition {
+	public:
+		virtual ~VariableDefinition() = default;
+		VariableType Type() const { return type; }
+
+		virtual bool Get(void* ptr, Variant& variant) {
+			Log::Message(Log::LT_WARNING, "Values can only be retrieved from scalar data types.");
+			return false;
+		}
+		virtual bool Set(void* ptr, const Variant& variant) {
+			Log::Message(Log::LT_WARNING, "Values can only be assigned to scalar data types.");
+			return false;
+		}
+		virtual int Size(void* ptr) {
+			Log::Message(Log::LT_WARNING, "Tried to get the size from a non-array data type.");
+			return 0;
+		}
+		virtual Variable GetChild(void* ptr, const AddressEntry& address);
+
+	protected:
+		VariableDefinition(VariableType type) : type(type) {}
+
+	private:
+		VariableType type;
+	};
+
+
+	class Variable {
+	public:
+		Variable() {}
+		Variable(VariableDefinition* definition, void* ptr) : definition(definition), ptr(ptr) {}
+
+		operator bool() const { return definition && ptr; }
+
+		bool Get(Variant& variant) {
+			return definition->Get(ptr, variant);
+		}
+		bool Set(const Variant& variant) {
+			return definition->Set(ptr, variant);
+		}
+		int Size() {
+			return definition->Size(ptr);
+		}
+		Variable GetChild(const AddressEntry& address) {
+			return definition->GetChild(ptr, address);
+		}
+		VariableType Type() const {
+			return definition->Type();
+		}
+
+	private:
+		VariableDefinition* definition = nullptr;
+		void* ptr = nullptr;
+	};
+
+
+
+	inline Variable VariableDefinition::GetChild(void* ptr, const AddressEntry& address) {
+		Log::Message(Log::LT_WARNING, "Tried to get the child of a scalar type.");
+		return Variable();
+	}
+
+
+	
+	template<typename T>
+	class ScalarDefinition final : public VariableDefinition {
+	public:
+		ScalarDefinition() : VariableDefinition(VariableType::Scalar) {}
+
+		bool Get(void* ptr, Variant& variant) override 
+		{
+			variant = *static_cast<T*>(ptr);
+			return true;
+		}
+		bool Set(void* ptr, const Variant& variant) override
+		{
+			return variant.GetInto<T>(*static_cast<T*>(ptr));
+		}
+	};
+
+
+	template<typename Container>
+	class ArrayDefinition final : public VariableDefinition {
+	public:
+		ArrayDefinition(VariableDefinition* underlying_variable) : VariableDefinition(VariableType::Array), underlying_variable(underlying_variable) {}
+
+		int Size(void* ptr) override {
+			return int(static_cast<Container*>(ptr)->size());
+		}
+
+	protected:
+		Variable GetChild(void* void_ptr, const AddressEntry& address) override
+		{
+			Container* ptr = static_cast<Container*>(void_ptr);
+			const int index = address.index;
+
+			if (index < 0 && index >= (int)ptr->size())
+			{
+				Log::Message(Log::LT_WARNING, "Data array index out of bounds.");
+				return Variable();
+			}
+
+			void* next_ptr = &((*ptr)[index]);
+			return Variable(underlying_variable, next_ptr);
+		}
+
+	private:
+		VariableDefinition* underlying_variable;
+	};
+
+
+	class StructMember {
+	public:
+		StructMember(VariableDefinition* variable) : variable(variable) {}
+		virtual ~StructMember() = default;
+
+		VariableDefinition* GetVariable() const { return variable; }
+
+		virtual void* GetPointer(void* base_ptr) = 0;
+
+	private:
+		VariableDefinition* variable;
+	};
+
+	template <typename Object, typename MemberType>
+	class StructMemberDefault final : public StructMember {
+	public:
+		StructMemberDefault(VariableDefinition* variable, MemberType Object::* member_ptr) : StructMember(variable), member_ptr(member_ptr) {}
+
+		void* GetPointer(void* base_ptr) override {
+			return &(static_cast<Object*>(base_ptr)->*member_ptr);
+		}
+
+	private:
+		MemberType Object::* member_ptr;
+	};
+
+
+	class StructDefinition final : public VariableDefinition {
+	public:
+		StructDefinition() : VariableDefinition(VariableType::Struct)
+		{}
+
+		Variable GetChild(void* ptr, const AddressEntry& address) override
+		{
+			const String& name = address.name;
+			if (name.empty())
+			{
+				Log::Message(Log::LT_WARNING, "Expected a struct member name but none given.");
+				return Variable();
+			}
+
+			auto it = members.find(name);
+			if (it == members.end())
+			{
+				Log::Message(Log::LT_WARNING, "Member %s not found in data struct.", name.c_str());
+				return Variable();
+			}
+
+			void* next_ptr = it->second->GetPointer(ptr);
+			VariableDefinition* next_variable = it->second->GetVariable();
+
+			return Variable(next_variable, next_ptr);
+		}
+
+		void AddMember(const String& name, UniquePtr<StructMember> member)
+		{
+			RMLUI_ASSERT(member);
+			bool inserted = members.emplace(name, std::move(member)).second;
+			RMLUI_ASSERTMSG(inserted, "Member name already exists.");
+		}
+
+	private:
+		SmallUnorderedMap<String, UniquePtr<StructMember>> members;
+	};
+
+
+
+	class TypeRegister;
+
+	class TypeHandle {
+	public:
+		operator bool() const { return type_register && GetDefinition(); }
+		virtual VariableDefinition* GetDefinition() const = 0;
+	protected:
+		TypeHandle(TypeRegister* type_register) : type_register(type_register) {}
+		TypeRegister* type_register;
+	};
+
+	template <typename T>
+	class ScalarHandle : public TypeHandle {
+	public:
+		ScalarHandle(TypeRegister* type_register) : TypeHandle(type_register) {}
+		VariableDefinition* GetDefinition() const override;
+	};
+
+	template<typename Object>
+	class StructHandle final : public TypeHandle {
+	public:
+		StructHandle(TypeRegister* type_register, StructDefinition* struct_definition) : TypeHandle(type_register), struct_definition(struct_definition) {}
+
+		// Register scalar member type 
+		template <typename MemberType>
+		StructHandle<Object>& RegisterMember(const String& name, MemberType Object::* member_ptr) {
+			static_assert(is_valid_scalar<MemberType>::value, "Not a valid scalar member type. Did you mean to add a struct or array member? If so, provide its handle.");
+			return RegisterMember(name, member_ptr, ScalarHandle<MemberType>(type_register));
+		}
+
+		// Register struct or array member type
+		template <typename MemberType>
+		StructHandle<Object>& RegisterMember(const String& name, MemberType Object::* member_ptr, const TypeHandle& member_handle);
+
+		VariableDefinition* GetDefinition() const override {
+			return struct_definition;
+		}
+
+	private:
+		StructDefinition* struct_definition;
+	};
+
+	template<typename Container>
+	class ArrayHandle final : public TypeHandle {
+	public:
+		ArrayHandle(TypeRegister* type_register, ArrayDefinition<Container>* array_definition) : TypeHandle(type_register), array_definition(array_definition) {}
+
+		VariableDefinition* GetDefinition() const override {
+			return array_definition;
+		}
+
+	private:
+		ArrayDefinition<Container>* array_definition;
+	};
+
+
+
+
+	class TypeRegister {
+	public:
+		template<typename T>
+		StructHandle<T> RegisterStruct()
+		{
+			static_assert(std::is_class<T>::value, "Type must be a struct or class type.");
+			FamilyId id = Family<T>::Id();
+
+			auto struct_variable = std::make_unique<StructDefinition>();
+			StructDefinition* struct_variable_raw = struct_variable.get();
+
+			bool inserted = type_register.emplace(id, std::move(struct_variable)).second;
+			if (!inserted)
+			{
+				RMLUI_ERRORMSG("Type already declared");
+				return StructHandle<T>(nullptr, nullptr);
+			}
+			
+			return StructHandle<T>(this, struct_variable_raw);
+		}
+
+		// Register array of scalars
+		template<typename Container>
+		ArrayHandle<Container> RegisterArray()
+		{
+			using value_type = typename Container::value_type;
+			static_assert(is_valid_scalar<value_type>::value, "Underlying value type of array is not a valid scalar type. Provide the type handle if adding an array of structs or arrays.");
+			VariableDefinition* value_variable = GetOrAddScalar<value_type>();
+			return RegisterArray<Container>(value_variable);
+		}
+
+		// Register array of structs or arrays
+		template<typename Container>
+		ArrayHandle<Container> RegisterArray(const TypeHandle& type_handle)
+		{
+			using value_type = typename Container::value_type;
+			VariableDefinition* value_variable = Get<value_type>();
+			bool correct_handle = (type_handle.GetDefinition() == value_variable);
+
+			RMLUI_ASSERTMSG(value_variable, "Underlying value type of array has not been registered.");
+			RMLUI_ASSERTMSG(correct_handle, "Improper type handle provided.");
+			if (!value_variable || !correct_handle)
+				return ArrayHandle<Container>(nullptr, nullptr);
+
+			return RegisterArray<Container>(value_variable);
+		}
+
+		template<typename T>
+		VariableDefinition* GetOrAddScalar()
+		{
+			FamilyId id = Family<T>::Id();
+
+			auto result = type_register.emplace(id, nullptr);
+			auto& it = result.first;
+			bool inserted = result.second;
+
+			if (inserted)
+			{
+				it->second = std::make_unique<ScalarDefinition<T>>();
+			}
+
+			return it->second.get();
+		}
+
+		template<typename T>
+		VariableDefinition* Get() const
+		{
+			FamilyId id = Family<T>::Id();
+			auto it = type_register.find(id);
+			if (it == type_register.end())
+				return nullptr;
+
+			return it->second.get();
+		}
+
+	private:
+		template<typename Container>
+		ArrayHandle<Container> RegisterArray(VariableDefinition* value_variable)
+		{
+			FamilyId container_id = Family<Container>::Id();
+
+			auto array_variable = std::make_unique<ArrayDefinition<Container>>(value_variable);
+			ArrayDefinition<Container>* array_variable_raw = array_variable.get();
+
+			bool inserted = type_register.emplace(container_id, std::move(array_variable)).second;
+			if (!inserted)
+			{
+				RMLUI_ERRORMSG("Array type already declared.");
+				return ArrayHandle<Container>(nullptr, nullptr);
+			}
+
+			return ArrayHandle<Container>(this, array_variable_raw);
+		}
+
+		UnorderedMap<FamilyId, UniquePtr<VariableDefinition>> type_register;
+	};
+
+
+	template<typename T>
+	inline VariableDefinition* ScalarHandle<T>::GetDefinition() const {
+		return type_register->GetOrAddScalar<T>();
+	}
+
+	template<typename Object>
+	template<typename MemberType>
+	inline StructHandle<Object>& StructHandle<Object>::RegisterMember(const String& name, MemberType Object::* member_ptr, const TypeHandle& member_handle) {
+		RMLUI_ASSERTMSG(member_handle.GetDefinition() == type_register->Get<MemberType>(), "Mismatch between member type and provided type handle.");
+		struct_definition->AddMember(name, std::make_unique<StructMemberDefault<Object, MemberType>>(member_handle.GetDefinition(), member_ptr));
+		return *this;
+	}
+
+
+
+	Address ParseAddress(const String& address_str);
+
+	class Model {
+	public:
+		Model(TypeRegister* type_register) : type_register(type_register) {}
+
+		template<typename T> bool BindScalar(String name, T* ptr) {
+			return Bind(name, ptr, type_register->GetOrAddScalar<T>(), VariableType::Scalar);
+		}
+		template<typename T> bool BindStruct(String name, T* ptr) {
+			return Bind(name, ptr, type_register->Get<T>(), VariableType::Struct);
+		}
+		template<typename T> bool BindArray(String name, T* ptr) {
+			return Bind(name, ptr, type_register->Get<T>(), VariableType::Array);
+		}
+
+		Variant GetValue(const String& address_str) const;
+		bool SetValue(const String& address_str, const Variant& variant) const;
+
+		Variable GetVariable(const String& address_str) const;
+		Variable GetVariable(const Address& address) const;
+
+	private:
+		bool Bind(String name, void* ptr, VariableDefinition* variable, VariableType type);
+
+
+
+		TypeRegister* type_register;
+
+		UnorderedMap<String, Variable> variables;
+	};
 
 
 	Address ParseAddress(const String& address_str)
@@ -636,14 +592,19 @@ namespace Data {
 
 	Variant Model::GetValue(const Rml::Core::String& address_str) const
 	{
-		Variable* var = GetVariable(address_str);
-		Variant result;
+		Variable variable = GetVariable(address_str);
 
-		if (var && var->Type() == VariableType::Scalar)
+		Variant result;
+		if (!variable)
+			return result;
+
+		if (variable.Type() != VariableType::Scalar)
 		{
-			if (!static_cast<Scalar*>(var)->Get(result))
-				Log::Message(Log::LT_WARNING, "Could not parse data value '%s'", address_str.c_str());
+			Log::Message(Log::LT_WARNING, "Error retrieving data variable '%s': Only the values of scalar variables can be parsed.", address_str.c_str());
+			return result;
 		}
+		if(!variable.Get(result))
+			Log::Message(Log::LT_WARNING, "Could not parse data value '%s'", address_str.c_str());
 
 		return result;
 	}
@@ -651,37 +612,42 @@ namespace Data {
 
 	bool Model::SetValue(const String& address_str, const Variant& variant) const
 	{
-		Variable* var = GetVariable(address_str);
-		bool result;
+		Variable variable = GetVariable(address_str);
 
-		if (var && var->Type() == VariableType::Scalar)
+		if (!variable)
+			return false;
+
+		if (variable.Type() != VariableType::Scalar)
 		{
-			if (static_cast<Scalar*>(var)->Set(variant))
-				result = true;
-			else
-				Log::Message(Log::LT_WARNING, "Could not assign data value '%s'", address_str.c_str());
+			Log::Message(Log::LT_WARNING, "Could not assign data value '%s', variable is not a scalar type.", address_str.c_str());
+			return false;
 		}
 
-		return result;
+		if(!variable.Set(variant))
+		{
+			Log::Message(Log::LT_WARNING, "Could not assign data value '%s'", address_str.c_str());
+			return false;
+		}
+
+		return true;
 	}
 
-	bool Model::Bind(String name, void* ptr, VariableInstancer* instancer)
+	bool Model::Bind(String name, void* ptr, VariableDefinition* variable, VariableType type)
 	{
 		RMLUI_ASSERT(ptr);
-		if (!instancer)
-		{
-			Log::Message(Log::LT_WARNING, "No instancer could be found for the data variable '%s'.", name.c_str());
-			return false;
-		}
-
-		UniquePtr<Variable> variable = instancer->Instance(ptr);
 		if (!variable)
 		{
-			Log::Message(Log::LT_WARNING, "Could not instance data variable '%s'.", name.c_str());
+			Log::Message(Log::LT_WARNING, "No registered type could be found for the data variable '%s'.", name.c_str());
 			return false;
 		}
 
-		bool inserted = variables.emplace(name, std::move(variable)).second;
+		if (variable->Type() != type)
+		{
+			Log::Message(Log::LT_WARNING, "The registered type does not match the given type for the data variable '%s'.", name.c_str());
+			return false;
+		}
+
+		bool inserted = variables.emplace(name, Variable(variable, ptr)).second;
 		if (!inserted)
 		{
 			Log::Message(Log::LT_WARNING, "Data model variable with name '%s' already exists.", name.c_str());
@@ -691,67 +657,46 @@ namespace Data {
 		return true;
 	}
 
-	Variable* Model::GetVariable(const String& address_str) const
+	Variable Model::GetVariable(const String& address_str) const
 	{
 		Address address = ParseAddress(address_str);
 
 		if (address.empty() || address.front().name.empty())
 		{
 			Log::Message(Log::LT_WARNING, "Invalid data address '%s'.", address_str.c_str());
-			return nullptr;
+			return Variable();
 		}
+
+		Variable instance = GetVariable(address);
+		if (!instance)
+		{
+			Log::Message(Log::LT_WARNING, "Could not find the data variable '%s'.", address_str.c_str());
+			return Variable();
+		}
+
+		return instance;
+	}
+
+	Variable Model::GetVariable(const Address& address) const
+	{
+		if (address.empty() || address.front().name.empty())
+			return Variable();
 
 		auto it = variables.find(address.front().name);
 		if (it == variables.end())
+			return Variable();
+
+		Variable variable = it->second;
+
+		for (int i = 1; i < (int)address.size() && variable; i++)
 		{
-			Log::Message(Log::LT_WARNING, "Could not find the data variable '%s'.", address_str.c_str());
-			return nullptr;
+			variable = variable.GetChild(address[i]);
+			if (!variable)
+				return Variable();
 		}
 
-		Variable* var = it->second.get();
-		for (int i = 1; i < (int)address.size(); i++)
-		{
-			if (!var)
-				break;
-
-			const AddressEntry& entry = address[i];
-
-			switch (var->Type()) {
-			case VariableType::Struct:
-			{
-				Struct& the_struct = static_cast<Struct&>(*var);
-				var = the_struct[entry.name];
-				break;
-			}
-			case VariableType::Array:
-			{
-				Array& the_array = static_cast<Array&>(*var);
-				var = the_array[entry.index];
-				break;
-			}
-			case VariableType::Scalar:
-			{
-				Log::Message(Log::LT_WARNING, "Invalid data variable address '%s'. The scalar variable '%s' was encountered before the end of the address.", address_str.c_str(), (i > 0 ? address[i - 1].name.c_str() : ""));
-				var = nullptr;
-				return nullptr;
-				break;
-			}
-			default:
-				RMLUI_ERROR;
-				var = nullptr;
-				return nullptr;
-			}
-		}
-
-		if (!var)
-		{
-			Log::Message(Log::LT_WARNING, "Could not find the data variable '%s'.", address_str.c_str());
-			return nullptr;
-		}
-
-		return var;
+		return variable;
 	}
-
 
 }
 
@@ -781,24 +726,24 @@ void TestDataVariable()
 	TypeRegister types;
 
 	{
-		auto int_vector_handle = types.RegisterArrayOfScalar<IntVector>();
+		auto int_vector_handle = types.RegisterArray<IntVector>();
 
 		auto fun_handle = types.RegisterStruct<FunData>();
 		if (fun_handle)
 		{
-			fun_handle.AddScalar("i", &FunData::i);
-			fun_handle.AddScalar("x", &FunData::x);
-			fun_handle.AddArray("magic", &FunData::magic, int_vector_handle);
+			fun_handle.RegisterMember("i", &FunData::i);
+			fun_handle.RegisterMember("x", &FunData::x);
+			fun_handle.RegisterMember("magic", &FunData::magic, int_vector_handle);
 		}
 
-		auto fun_array_handle = types.RegisterArrayOfStruct<FunArray>(fun_handle);
+		auto fun_array_handle = types.RegisterArray<FunArray>(fun_handle);
 
 		auto smart_handle = types.RegisterStruct<SmartData>();
 		if (smart_handle)
 		{
-			smart_handle.AddScalar("valid", &SmartData::valid);
-			smart_handle.AddStruct("fun", &SmartData::fun, fun_handle);
-			smart_handle.AddArray("more_fun", &SmartData::more_fun, fun_array_handle);
+			smart_handle.RegisterMember("valid", &SmartData::valid);
+			smart_handle.RegisterMember("fun", &SmartData::fun, fun_handle);
+			smart_handle.RegisterMember("more_fun", &SmartData::more_fun, fun_array_handle);
 		}
 	}
 

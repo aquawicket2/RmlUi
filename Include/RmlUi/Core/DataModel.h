@@ -81,7 +81,7 @@ public:
 	DataViews views;
 
 	using DataMembers = SmallUnorderedMap<String, UniquePtr<DataMember>>;
-	using DataTypes = UnorderedMap<int, DataMembers>;
+	using DataTypes = UnorderedMap<FamilyId, DataMembers>;
 	DataTypes data_types;
 
 	using DataContainers = UnorderedMap<String, UniquePtr<DataContainer>>;
@@ -313,7 +313,7 @@ public:
 	{
 		RMLUI_ASSERT(model);
 
-		int id = Family< typename std::remove_pointer< T >::type >::Id();
+		FamilyId id = Family< typename std::remove_pointer< T >::type >::Id();
 
 		auto it = model->data_types.find(id);
 		if (it != model->data_types.end())
@@ -335,7 +335,7 @@ public:
 	DataTypeHandle<T> RegisterType()
 	{
 		RMLUI_ASSERT(model);
-		int id = Family< T >::Id();
+		FamilyId id = Family< T >::Id();
 		auto result = model->data_types.emplace(id, DataModel::DataMembers() );
 		if (!result.second) {
 			RMLUI_ERRORMSG("Type already registered.");
