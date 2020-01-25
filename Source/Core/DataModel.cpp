@@ -138,7 +138,7 @@ Address DataModel::ResolveAddress(const String& address_str, Element* parent) co
 		auto it_element = aliases.find(ancestor);
 		if (it_element != aliases.end())
 		{
-			auto& alias_names = it_element->second;
+			const auto& alias_names = it_element->second;
 			auto it_alias_name = alias_names.find(first_name);
 			if (it_alias_name != alias_names.end())
 			{
@@ -150,7 +150,7 @@ Address DataModel::ResolveAddress(const String& address_str, Element* parent) co
 				}
 
 				// Insert the full alias address, replacing the first element.
-				address[0] = std::move(replace_address[0]);
+				address[0] = replace_address[0];
 				address.insert(address.begin() + 1, replace_address.begin() + 1, replace_address.end());
 				return address;
 			}

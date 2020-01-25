@@ -35,10 +35,322 @@ namespace Rml {
 namespace Core {
 
 
+namespace Parser {
+
+enum class Type {
+	Expression,
+	Factor,
+	Term,
+	StringLiteral,
+	NumberLiteral,
+	Variable,
+	Add,
+	Subtract,
+	Multiply,
+	Divide
+};
+
+
+class ParserContext {
+public:
+	ParserContext(String expression) : expression(std::move(expression)) {}
+
+	char Look() const {
+		if (index >= expression.size())
+			return '\0';
+		return expression[index];
+	}
+
+	bool Match(char c) {
+		if (c == Look()) {
+			Next();
+			SkipWhitespace();
+			return true;
+		}
+		Expected(c);
+		return false;
+	}
+
+	char Next() {
+		++index;
+		return Look();
+	}
+
+	void SkipWhitespace() {
+		char c = Look();
+		while (StringUtilities::IsWhitespace(c))
+			c = Next();
+	}
+
+	void Enter(Type type);
+
+	void Error(String message) const
+	{
+		message = CreateString(1000, "Error in expression '%s' at %d. ", expression.c_str(), index) + message;
+		Log::Message(Log::LT_WARNING, message.c_str());
+		RMLUI_ERROR;
+	}
+	void Expected(char expected) const {
+		Error(CreateString(50, "Expected '%c' but found '%c'.", expected, Look()));
+	}
+	void Expected(String expected_symbols) const {
+		Error(CreateString(200, "Expected %s but found character '%c'.", expected_symbols.c_str(), Look()));
+	}
+
+	void Parse() 
+	{
+		Log::Message(Log::LT_DEBUG, "Parsing expression: %s", expression.c_str());
+		index = 0;
+		stack_depth = 0;
+		finished = false;
+		Enter(Type::Expression);
+		if (!finished)
+			Error(CreateString(50, "Unexpected character '%c' encountered.", Look()));
+	}
+
+	void Finished() 
+	{
+		finished = true;
+		if(stack_depth == 1)
+			Log::Message(Log::LT_DEBUG, "We are done parsing!", stack_depth);
+		else
+			Error("End of string encountered before parsing could complete.");
+	}
+private:
+	const String expression;
+
+	size_t index = 0;
+	int stack_depth = 0;
+	bool finished = false;
+};
+
+
+void StringLiteral(ParserContext& context)
+{
+	String str;
+
+	if (context.Look() != '\'')
+		context.Expected('\'');
+
+	char c = context.Next();
+	bool previous_character_is_escape = false;
+
+	while (c != '\'' || previous_character_is_escape)
+	{
+		previous_character_is_escape = (c == '\\');
+		str += c;
+		c = context.Next();
+	}
+
+	context.Next();
+
+	Log::Message(Log::LT_DEBUG, "Got string '%s'.", str.c_str());
+}
+
+void NumberLiteral(ParserContext& context)
+{
+	String str;
+
+	bool has_dot = false;
+	char c = context.Look();
+	while ((c >= '0' && c <= '9' ) || (c == '.' && !has_dot))
+	{
+		str += c;
+		if (c == '.')
+			has_dot = true;
+		c = context.Next();
+	}
+
+	float number = FromString(str, 0.0f);
+
+	Log::Message(Log::LT_DEBUG, "Got number %g.", number);
+}
+
+bool IsVariableCharacter(char c, bool is_first_character)
+{
+	const bool is_alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+
+	if (is_first_character)
+		return is_alpha;
+
+	if (is_alpha || (c >= '0' && c <= '9'))
+		return true;
+
+	for (char valid_char : "_.[] ")
+	{
+		if (c == valid_char)
+			return true;
+	}
+
+	return false;
+}
+
+void DoVariable(ParserContext& context)
+{
+	String name;
+
+	bool is_first_character = true;
+	char c = context.Look();
+
+	while (IsVariableCharacter(c, is_first_character))
+	{
+		name += c;
+		c = context.Next();
+		is_first_character = false;
+	}
+
+	Log::Message(Log::LT_DEBUG, "Got variable '%s'.", name.c_str());
+}
+
+void Add(ParserContext& context)
+{
+	Log::Message(Log::LT_DEBUG, "Add.");
+	context.Match('+');
+	context.Enter(Type::Term);
+}
+void Subtract(ParserContext& context)
+{
+	Log::Message(Log::LT_DEBUG, "Subtract.");
+	context.Match('-');
+	context.Enter(Type::Term);
+}
+void Multiply(ParserContext& context)
+{
+	Log::Message(Log::LT_DEBUG, "Multiply.");
+	context.Match('*');
+	context.Enter(Type::Factor);
+}
+void Divide(ParserContext& context)
+{
+	Log::Message(Log::LT_DEBUG, "Divide.");
+	context.Match('/');
+	context.Enter(Type::Factor);
+}
+
+
+void Factor(ParserContext& context)
+{
+	const char c = context.Look();
+
+	if (c == '(')
+	{
+		context.Match('(');
+		context.Enter(Type::Expression);
+		context.Match(')');
+	}
+	else if (c == '\'')
+	{
+		context.Enter(Type::StringLiteral);
+		context.SkipWhitespace();
+	}
+	else if (c >= '0' && c <= '9')
+	{
+		context.Enter(Type::NumberLiteral);
+		context.SkipWhitespace();
+	}
+	else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+	{
+		context.Enter(Type::Variable);
+		context.SkipWhitespace();
+	}
+	else
+		context.Expected("literal, variable name, or parenthesis");
+}
+
+void Term(ParserContext& context)
+{
+	context.Enter(Type::Factor);
+
+	bool executing = true;
+	while (executing)
+	{
+		switch (const char c = context.Look())
+		{
+		case '*': context.Enter(Type::Multiply); break;
+		case '/': context.Enter(Type::Divide); break;
+		default:
+			executing = false;
+		}
+	}
+}
+
+void Expression(ParserContext& context)
+{
+	context.Enter(Type::Term);
+
+	bool executing = true;
+	while (executing) {
+		switch (char c = context.Look())
+		{
+		case '+': context.Enter(Type::Add); break;
+		case '-': context.Enter(Type::Subtract); break;
+		case '\0': 
+			context.Finished();
+			executing = false;
+			break;
+		default:
+			executing = false;
+		}
+	}
+}
+
+
+
+void ParserContext::Enter(Type type)
+{
+	stack_depth += 1;
+
+	switch (type)
+	{
+	case Type::Expression:    Expression(*this); break;
+	case Type::Factor:        Factor(*this); break;
+	case Type::Term:          Term(*this); break;
+	case Type::StringLiteral: StringLiteral(*this); break;
+	case Type::NumberLiteral: NumberLiteral(*this); break;
+	case Type::Variable:      DoVariable(*this); break;
+	case Type::Add:           Add(*this); break;
+	case Type::Subtract:      Subtract(*this); break;
+	case Type::Multiply:      Multiply(*this); break;
+	case Type::Divide:        Divide(*this); break;
+	default:
+		RMLUI_ERRORMSG("Not implemented");
+		break;
+	}
+
+	stack_depth -= 1;
+}
+
+
+
+struct TestParser {
+	TestParser() {
+		ParserContext("5.2 * (19 - test)").Parse();
+		ParserContext("(color_name) + (': rgba(' + color_value + ')')").Parse();
+
+		bool finished = true;
+	}
+};
+
+
+
+
+} // </namespace Parser>
+
+
+
+
+
+
+
+
+
 DataView::~DataView() {}
 
 Element* DataView::GetElement() const
 {
+	// TODO Remove, testing only
+	static Parser::TestParser test_parser;
+
 	Element* result = attached_element.get();
 	if (!result)
 		Log::Message(Log::LT_WARNING, "Could not retrieve element in view, was it destroyed?");
