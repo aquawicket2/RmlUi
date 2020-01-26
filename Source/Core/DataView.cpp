@@ -29,7 +29,7 @@
 #include "precompiled.h"
 #include "../../Include/RmlUi/Core/DataView.h"
 #include "../../Include/RmlUi/Core/DataModel.h"
-
+#include <stack>
 
 namespace Rml {
 namespace Core {
@@ -47,9 +47,38 @@ enum class Type {
 	Add,
 	Subtract,
 	Multiply,
-	Divide
+	Divide,
+	Not,
+	Ternary
 };
 
+enum class Instruction {
+	                  // Assignment (register) = Read (register R/L/C) or Stack manipulation (push/pop)
+	Push      = 'P',  //         = push(R)
+	Pop       = 'o',  // <R/L/C> = pop
+	Literal   = 'L',  //       R = ""
+	Variable  = 'V',  //       R = ""
+	Add       = '+',  //       R = L+R
+	Subtract  = '-',  //       R = L-R
+	Multiply  = '*',  //       R = L*R
+	Divide    = '/',  //       R = L/R
+	Not       = '!',  //       R = !R
+	Ternary   = '?',  //       R = L ? C : R
+};
+
+enum class Register
+{
+	R, // Typically results/return values and right-hand side arguments.
+	L, // Typically left-hand side arguments.
+	C  // Typically center arguments.
+};
+
+
+struct InstructionData {
+	Instruction instruction;
+	Variant data;
+};
+using Program = std::vector<InstructionData>;
 
 class ParserContext {
 public:
@@ -86,7 +115,7 @@ public:
 
 	void Error(String message) const
 	{
-		message = CreateString(1000, "Error in expression '%s' at %d. ", expression.c_str(), index) + message;
+		message = CreateString(message.size() + expression.size() + 50, "Error in expression '%s' at %d. ", expression.c_str(), index) + message;
 		Log::Message(Log::LT_WARNING, message.c_str());
 		RMLUI_ERROR;
 	}
@@ -94,35 +123,201 @@ public:
 		Error(CreateString(50, "Expected '%c' but found '%c'.", expected, Look()));
 	}
 	void Expected(String expected_symbols) const {
-		Error(CreateString(200, "Expected %s but found character '%c'.", expected_symbols.c_str(), Look()));
+		Error(CreateString(expected_symbols.size() + 50, "Expected %s but found character '%c'.", expected_symbols.c_str(), Look()));
 	}
 
 	void Parse() 
 	{
 		Log::Message(Log::LT_DEBUG, "Parsing expression: %s", expression.c_str());
 		index = 0;
-		stack_depth = 0;
+		parse_depth = 0;
 		finished = false;
 		Enter(Type::Expression);
 		if (!finished)
 			Error(CreateString(50, "Unexpected character '%c' encountered.", Look()));
+		else
+			Execute();
 	}
+
+	void Execute();
 
 	void Finished() 
 	{
 		finished = true;
-		if(stack_depth == 1)
-			Log::Message(Log::LT_DEBUG, "We are done parsing!", stack_depth);
-		else
-			Error("End of string encountered before parsing could complete.");
+		Log::Message(Log::LT_DEBUG, "Finished parsing expression! Instructions: %d   Parse depth: %d   Stack depth: %d", program.size(), parse_depth, program_stack_depth);
 	}
+
+	void Add(Instruction instruction, Variant data = Variant())
+	{
+		if(instruction == Instruction::Push)
+		{
+			program_stack_depth += 1;
+		}
+		else if(instruction == Instruction::Pop)
+		{
+			if (program_stack_depth == 0) {
+				Error("Internal parser error: Tried to pop an empty stack.");
+				return;
+			}
+			program_stack_depth -= 1;
+		}
+
+		program.push_back(InstructionData{ instruction, std::move(data) });
+
+	}
+	void Push() {
+		Add(Instruction::Push);
+	}
+	void Pop(Register destination) {
+		Add(Instruction::Pop, Variant(int(destination)));
+	}
+
 private:
 	const String expression;
 
 	size_t index = 0;
-	int stack_depth = 0;
+	int parse_depth = 0;
 	bool finished = false;
+
+	int program_stack_depth = 0;
+
+	Program program;
 };
+
+
+class ExecutionContext {
+public:
+	ExecutionContext(const Program& program) : program(program) {}
+
+	bool Error(String message) const
+	{
+		message = "Error during execution. " + message;
+		Log::Message(Log::LT_WARNING, message.c_str());
+		RMLUI_ERROR;
+		return false;
+	}
+
+	bool Run() {
+
+		Log::Message(Log::LT_DEBUG, "Executing program");
+		DumpProgram();
+		bool success = true;
+		for (size_t i = 0; i < program.size(); i++)
+		{
+			if (!Execute(program[i].instruction, program[i].data))
+			{
+				success = false;
+				break;
+			}
+		}
+
+		if (success)
+		{
+			Log::Message(Log::LT_DEBUG, "Succesfully finished execution of program with %d instructions.", program.size());
+		}
+		else
+		{
+			Log::Message(Log::LT_WARNING, "Failed executing program with %d instructions.", program.size());
+		}
+
+		Log::Message(Log::LT_DEBUG, "R: %s", R.Get<String>().c_str());
+		Log::Message(Log::LT_DEBUG, "L: %s", L.Get<String>().c_str());
+		Log::Message(Log::LT_DEBUG, "C: %s", C.Get<String>().c_str());
+		Log::Message(Log::LT_DEBUG, "Stack #: %d", stack.size());
+
+		return success;
+	}
+
+	void DumpProgram() {
+
+		int i = 0;
+		for (auto& instruction : program)
+		{
+			Log::Message(Log::LT_DEBUG, "    %2d  '%c'  %s", i, char(instruction.instruction), instruction.data.Get<String>().c_str());
+			i++;
+		}
+	}
+
+private:
+	Variant R, L, C;
+	std::stack<Variant> stack;
+	const Program& program;
+
+	bool Execute(Instruction instruction, const Variant& data)
+	{
+		switch (instruction)
+		{
+		case Instruction::Push:
+		{
+			stack.push(std::move(R));
+			R.Clear();
+		}
+		break;
+		case Instruction::Pop:
+		{
+			if (stack.empty())
+				return Error("Cannot pop stack, it is empty.");
+
+			Register reg = Register(data.Get<int>(-1));
+			switch (reg) {
+			case Register::R:  R = stack.top(); stack.pop(); break;
+			case Register::L:  L = stack.top(); stack.pop(); break;
+			case Register::C:  C = stack.top(); stack.pop(); break;
+			default:
+				return Error(CreateString(50, "Invalid register %d", int(reg)));
+			}
+		}
+		break;
+		case Instruction::Literal:
+		{
+			R = data;
+		}
+		break;
+		case Instruction::Variable:
+		{
+			// TODO: fetch from data model (data is model address), write into R.
+			R = data;
+		}
+		break;
+		case Instruction::Add:
+		{
+			if (L.GetType() == Variant::STRING || R.GetType() == Variant::STRING)
+				R = Variant(L.Get<String>() + R.Get<String>());
+			else
+				R = Variant(L.Get<float>() + R.Get<float>());
+		}
+		break;
+		case Instruction::Subtract:
+		{
+			R = Variant(L.Get<float>() - R.Get<float>());
+		}
+		break;
+		case Instruction::Multiply:
+		{
+			R = Variant(L.Get<float>() * R.Get<float>());
+		}
+		break;
+		case Instruction::Divide:
+		{
+			R = Variant(L.Get<float>() / R.Get<float>());
+		}
+		break;
+		case Instruction::Not:
+		{
+			R = Variant(!R.Get<bool>());
+		}
+		break;
+		case Instruction::Ternary:
+		{
+			if (L.Get<bool>())
+				R = C;
+		}
+		break;
+		}
+		return true;
+	}
+};
+
 
 
 void StringLiteral(ParserContext& context)
@@ -144,7 +339,8 @@ void StringLiteral(ParserContext& context)
 
 	context.Next();
 
-	Log::Message(Log::LT_DEBUG, "Got string '%s'.", str.c_str());
+	context.Add(Instruction::Literal, Variant(str));
+	//Log::Message(Log::LT_DEBUG, "Got string '%s'.", str.c_str());
 }
 
 void NumberLiteral(ParserContext& context)
@@ -163,7 +359,8 @@ void NumberLiteral(ParserContext& context)
 
 	float number = FromString(str, 0.0f);
 
-	Log::Message(Log::LT_DEBUG, "Got number %g.", number);
+	context.Add(Instruction::Literal, Variant(number));
+	//Log::Message(Log::LT_DEBUG, "Got number %g.", number);
 }
 
 bool IsVariableCharacter(char c, bool is_first_character)
@@ -178,7 +375,7 @@ bool IsVariableCharacter(char c, bool is_first_character)
 
 	for (char valid_char : "_.[] ")
 	{
-		if (c == valid_char)
+		if (c == valid_char && valid_char != '\0')
 			return true;
 	}
 
@@ -199,32 +396,55 @@ void DoVariable(ParserContext& context)
 		is_first_character = false;
 	}
 
+	context.Add(Instruction::Variable, Variant(name));
+
 	Log::Message(Log::LT_DEBUG, "Got variable '%s'.", name.c_str());
 }
 
 void Add(ParserContext& context)
 {
-	Log::Message(Log::LT_DEBUG, "Add.");
 	context.Match('+');
 	context.Enter(Type::Term);
+	context.Pop(Register::L);
+	context.Add(Instruction::Add);
 }
 void Subtract(ParserContext& context)
 {
-	Log::Message(Log::LT_DEBUG, "Subtract.");
 	context.Match('-');
 	context.Enter(Type::Term);
+	context.Pop(Register::L);
+	context.Add(Instruction::Subtract);
 }
 void Multiply(ParserContext& context)
 {
-	Log::Message(Log::LT_DEBUG, "Multiply.");
 	context.Match('*');
 	context.Enter(Type::Factor);
+	context.Pop(Register::L);
+	context.Add(Instruction::Multiply);
 }
 void Divide(ParserContext& context)
 {
-	Log::Message(Log::LT_DEBUG, "Divide.");
 	context.Match('/');
 	context.Enter(Type::Factor);
+	context.Pop(Register::L);
+	context.Add(Instruction::Divide);
+}
+void Not(ParserContext& context)
+{
+	context.Match('!');
+	context.Enter(Type::Factor);
+	context.Add(Instruction::Not);
+}
+void Ternary(ParserContext& context)
+{
+	context.Match('?');
+	context.Enter(Type::Expression);
+	context.Push();
+	context.Match(':');
+	context.Enter(Type::Expression);
+	context.Pop(Register::C);
+	context.Pop(Register::L);
+	context.Add(Instruction::Ternary);
 }
 
 
@@ -243,6 +463,11 @@ void Factor(ParserContext& context)
 		context.Enter(Type::StringLiteral);
 		context.SkipWhitespace();
 	}
+	else if (c == '!')
+	{
+		context.Enter(Type::Not);
+		context.SkipWhitespace();
+	}
 	else if (c >= '0' && c <= '9')
 	{
 		context.Enter(Type::NumberLiteral);
@@ -254,7 +479,7 @@ void Factor(ParserContext& context)
 		context.SkipWhitespace();
 	}
 	else
-		context.Expected("literal, variable name, or parenthesis");
+		context.Expected("literal, variable name, parenthesis, or '!'");
 }
 
 void Term(ParserContext& context)
@@ -266,8 +491,8 @@ void Term(ParserContext& context)
 	{
 		switch (const char c = context.Look())
 		{
-		case '*': context.Enter(Type::Multiply); break;
-		case '/': context.Enter(Type::Divide); break;
+		case '*': context.Push(); context.Enter(Type::Multiply); break;
+		case '/': context.Push(); context.Enter(Type::Divide); break;
 		default:
 			executing = false;
 		}
@@ -279,11 +504,13 @@ void Expression(ParserContext& context)
 	context.Enter(Type::Term);
 
 	bool executing = true;
-	while (executing) {
+	while (executing)
+	{
 		switch (char c = context.Look())
 		{
-		case '+': context.Enter(Type::Add); break;
-		case '-': context.Enter(Type::Subtract); break;
+		case '+': context.Push(); context.Enter(Type::Add); break;
+		case '-': context.Push(); context.Enter(Type::Subtract); break;
+		case '?': context.Push(); context.Enter(Type::Ternary); break;
 		case '\0': 
 			context.Finished();
 			executing = false;
@@ -298,7 +525,7 @@ void Expression(ParserContext& context)
 
 void ParserContext::Enter(Type type)
 {
-	stack_depth += 1;
+	parse_depth += 1;
 
 	switch (type)
 	{
@@ -308,24 +535,33 @@ void ParserContext::Enter(Type type)
 	case Type::StringLiteral: StringLiteral(*this); break;
 	case Type::NumberLiteral: NumberLiteral(*this); break;
 	case Type::Variable:      DoVariable(*this); break;
-	case Type::Add:           Add(*this); break;
+	case Type::Add:           Parser::Add(*this); break;
 	case Type::Subtract:      Subtract(*this); break;
 	case Type::Multiply:      Multiply(*this); break;
 	case Type::Divide:        Divide(*this); break;
+	case Type::Not:           Not(*this); break;
+	case Type::Ternary:       Ternary(*this); break;
 	default:
 		RMLUI_ERRORMSG("Not implemented");
 		break;
 	}
 
-	stack_depth -= 1;
+	parse_depth -= 1;
+}
+
+void ParserContext::Execute() {
+	ExecutionContext(program).Run();
 }
 
 
 
 struct TestParser {
 	TestParser() {
-		ParserContext("5.2 * (19 - test)").Parse();
+		ParserContext("'hello' + ' ' + 'world'").Parse();
+		ParserContext("5+(1+2)").Parse();
+		ParserContext("5.2 + 19 + 'test'").Parse();
 		ParserContext("(color_name) + (': rgba(' + color_value + ')')").Parse();
+		ParserContext("!!10 - 1 ? 'hello' : 'world'").Parse();
 
 		bool finished = true;
 	}
