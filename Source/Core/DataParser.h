@@ -31,22 +31,37 @@
 
 #include "../../Include/RmlUi/Core/Header.h"
 #include "../../Include/RmlUi/Core/Types.h"
-#include "../../Include/RmlUi/Core/Variant.h"
+#include "../../Include/RmlUi/Core/DataVariable.h"
 
 namespace Rml {
 namespace Core {
 
+class Element;
+class DataModel;
 struct InstructionData;
 using Program = std::vector<InstructionData>;
+
+class DataExpressionInterface {
+public:
+    DataExpressionInterface() = default;
+    DataExpressionInterface(DataModel* data_model, Element* element);
+
+    Address ParseAddress(const String& address_str) const;
+    Variant GetValue(const Address& address) const;
+
+private:
+    DataModel* data_model = nullptr;
+    Element* element = nullptr;
+};
 
 class DataExpression {
 public:
     DataExpression(String expression);
     ~DataExpression();
 
-    bool Parse();
+    bool Parse(const DataExpressionInterface& interface);
 
-    bool Run(DataModel& data_model);
+    bool Run(const DataExpressionInterface& interface, Variant& out_value);
 
     const StringList& GetVariableNameList() const { return variable_names; }
 
@@ -54,8 +69,11 @@ private:
     String expression;
     StringList variable_names;
 
+    UnorderedMap<String, Address> variable_address_map;
+
     Program program;
 };
+
 
 
 

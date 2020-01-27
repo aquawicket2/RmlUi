@@ -31,37 +31,16 @@
 #include "DataParser.h"
 #include <stack>
 
-namespace Rml {
-namespace Core {
-
-
-
 #ifdef _MSC_VER
 #pragma warning(default : 4061)
 #pragma warning(default : 4062)
 #endif
 
-enum class Type {
-	Expression,
-	Factor,
-	Term,
-	StringLiteral,
-	NumberLiteral,
-	Variable,
-	Add,
-	Subtract,
-	Multiply,
-	Divide,
-	Not,
-	And,
-	Or,
-	Equal,
-	NotEqual,
-	Less,
-	Greater,
-	Ternary,
-	Function,
-};
+namespace Rml {
+namespace Core {
+
+class Interpreter;
+class DataParser;
 
 /*
 	The abstract machine for RmlUi data scripts.
@@ -96,12 +75,12 @@ enum class Instruction { // Assignment (register/stack) = Read (register R/L/C, 
 	Not       = '!',     //       R = !R
 	And       = '&',     //       R = L && R
 	Or        = '|',     //       R = L || R
-	Equal     = '=',     //       R = L == R
-	NotEqual  = 'N',     //       R = L != R
 	Less      = '<',     //       R = L < R
 	LessEq    = 'L',     //       R = L <= R
 	Greater   = '>',     //       R = L > R
 	GreaterEq = 'G',     //       R = L >= R
+	Equal     = '=',     //       R = L == R
+	NotEqual  = 'N',     //       R = L != R
 	Ternary   = '?',     //       R = L ? C : R
 	Arguments = 'a',     //      A+ = S-  (Repeated D times, where D gives the num. arguments)
 	Function  = 'F',     //       R = DataModel.Execute( D, R, A ); A.Clear();  (D determines function name, R the input value, A the arguments)
@@ -118,15 +97,20 @@ struct InstructionData {
 };
 using Program = std::vector<InstructionData>;
 
-namespace Parser {
+namespace Parse {
+	static void Expression(DataParser& parser);
+};
 
-class ParserContext {
+
+class DataParser {
 public:
-	ParserContext(String expression) : expression(std::move(expression)) {}
+	DataParser(String expression) : expression(std::move(expression)) {}
 
-	char Look() const {
-		if (index >= expression.size())
+	char Look() {
+		if (index >= expression.size()) {
+			reached_end = true;
 			return '\0';
+		}
 		return expression[index];
 	}
 
@@ -152,8 +136,6 @@ public:
 			c = Next();
 	}
 
-	void Enter(Type type);
-
 	void Error(String message)
 	{
 		parse_error = true;
@@ -175,30 +157,29 @@ public:
 		Error(CreateString(expected_symbols.size() + 50, "Expected %s but found character '%c'.", expected_symbols.c_str(), Look()));
 	}
 
-	ParserContext& Parse() 
+	bool Parse() 
 	{
 		Log::Message(Log::LT_DEBUG, "Parsing expression: %s", expression.c_str());
+		program.clear();
 		index = 0;
-		parse_depth = 0;
 		reached_end = false;
 		parse_error = false;
 		
-		Enter(Type::Expression);
+		Parse::Expression(*this);
 		
 		if (!reached_end) {
 			parse_error = true;
 			Error(CreateString(50, "Unexpected character '%c' encountered.", Look()));
 		}
 		if (!parse_error)
-			Log::Message(Log::LT_DEBUG, "Finished parsing expression! Instructions: %d   Parse depth: %d   Stack depth: %d", program.size(), parse_depth, program_stack_size);
+			Log::Message(Log::LT_DEBUG, "Finished parsing expression! Instructions: %d   Stack depth: %d", program.size(), program_stack_size);
 
-		return *this;
+		return !parse_error;
 	}
 
-	String Execute();
-
-	void ReachedEnd() {
-		reached_end = true;
+	Program ReleaseProgram() {
+		RMLUI_ASSERT(!parse_error);
+		return std::move(program);
 	}
 
 	void Emit(Instruction instruction, Variant data = Variant())
@@ -232,9 +213,8 @@ private:
 	const String expression;
 
 	size_t index = 0;
-	int parse_depth = 0;
 	bool reached_end = false;
-	bool parse_error = false;
+	bool parse_error = true;
 
 	int program_stack_size = 0;
 
@@ -242,9 +222,415 @@ private:
 };
 
 
-class ExecutionContext {
+namespace Parse {
+
+	// Forward declare all parse functions.
+	static void Expression(DataParser& parser);
+	static void Factor(DataParser& parser);
+	static void Term(DataParser& parser);
+
+	static void NumberLiteral(DataParser& parser);
+	static void StringLiteral(DataParser& parser);
+	static void Variable(DataParser& parser);
+
+	static void Add(DataParser& parser);
+	static void Subtract(DataParser& parser);
+	static void Multiply(DataParser& parser);
+	static void Divide(DataParser& parser);
+
+	static void Not(DataParser& parser);
+	static void And(DataParser& parser);
+	static void Or(DataParser& parser);
+	static void Less(DataParser& parser);
+	static void Greater(DataParser& parser);
+	static void Equal(DataParser& parser);
+	static void NotEqual(DataParser& parser);
+
+	static void Ternary(DataParser& parser);
+	static void Function(DataParser& parser);
+
+	// Helper functions
+	static bool IsVariableCharacter(char c, bool is_first_character)
+	{
+		const bool is_alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+
+		if (is_first_character)
+			return is_alpha;
+
+		if (is_alpha || (c >= '0' && c <= '9'))
+			return true;
+
+		for (char valid_char : "_.[] ")
+		{
+			if (c == valid_char && valid_char != '\0')
+				return true;
+		}
+
+		return false;
+	}
+	static String VariableName(DataParser& parser)
+	{
+		String name;
+
+		bool is_first_character = true;
+		char c = parser.Look();
+
+		while (IsVariableCharacter(c, is_first_character))
+		{
+			name += c;
+			c = parser.Next();
+			is_first_character = false;
+		}
+
+		// Right trim spaces in name
+		size_t new_size = String::npos;
+		for (int i = int(name.size()) - 1; i >= 1; i--)
+		{
+			if (name[i] == ' ')
+				new_size = size_t(i);
+			else
+				break;
+		}
+		if (new_size != String::npos)
+			name.resize(new_size);
+
+		return name;
+	}
+
+	// Parser functions
+	static void Expression(DataParser& parser)
+	{
+		Term(parser);
+
+		bool looping = true;
+		while (looping)
+		{
+			switch (char c = parser.Look())
+			{
+			case '+': Add(parser); break;
+			case '-': Subtract(parser); break;
+			case '?': Ternary(parser); break;
+			case '|':
+			{
+				parser.Match('|', false);
+				if (parser.Look() == '|')
+					Or(parser);
+				else
+				{
+					parser.SkipWhitespace();
+					Function(parser);
+				}
+			}
+			break;
+			case '&': And(parser); break;
+			case '=': Equal(parser); break;
+			case '!': NotEqual(parser); break;
+			case '<': Less(parser); break;
+			case '>': Greater(parser); break;
+			case '\0':
+				looping = false;
+				break;
+			default:
+				looping = false;
+			}
+		}
+	}
+	static void Term(DataParser& parser)
+	{
+		Factor(parser);
+
+		bool looping = true;
+		while (looping)
+		{
+			switch (const char c = parser.Look())
+			{
+			case '*': Multiply(parser); break;
+			case '/': Divide(parser); break;
+			default:
+				looping = false;
+			}
+		}
+	}
+	static void Factor(DataParser& parser)
+	{
+		const char c = parser.Look();
+
+		if (c == '(')
+		{
+			parser.Match('(');
+			Expression(parser);
+			parser.Match(')');
+		}
+		else if (c == '\'')
+		{
+			parser.Match('\'', false);
+			StringLiteral(parser);
+			parser.Match('\'');
+		}
+		else if (c == '!')
+		{
+			Not(parser);
+			parser.SkipWhitespace();
+		}
+		else if (c == '-' || (c >= '0' && c <= '9'))
+		{
+			NumberLiteral(parser);
+			parser.SkipWhitespace();
+		}
+		else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+		{
+			Variable(parser);
+			parser.SkipWhitespace();
+		}
+		else
+			parser.Expected("literal, variable name, parenthesis, or '!'");
+	}
+
+	static void NumberLiteral(DataParser& parser)
+	{
+		String str;
+
+		bool first_match = false;
+		bool has_dot = false;
+		char c = parser.Look();
+		if (c == '-')
+		{
+			str += c;
+			c = parser.Next();
+		}
+
+		while ((c >= '0' && c <= '9') || (c == '.' && !has_dot))
+		{
+			first_match = true;
+			str += c;
+			if (c == '.')
+				has_dot = true;
+			c = parser.Next();
+		}
+
+		if (!first_match)
+		{
+			parser.Error(CreateString(100, "Invalid number literal. Expected '0-9' or '.' but found '%c'.", c));
+			return;
+		}
+
+		float number = FromString(str, 0.0f);
+
+		parser.Emit(Instruction::Literal, Variant(number));
+	}
+	static void StringLiteral(DataParser& parser)
+	{
+		String str;
+
+		char c = parser.Look();
+		bool previous_character_is_escape = false;
+
+		while (c != '\0' && (c != '\'' || previous_character_is_escape))
+		{
+			previous_character_is_escape = (c == '\\');
+			str += c;
+			c = parser.Next();
+		}
+
+		parser.Emit(Instruction::Literal, Variant(str));
+	}
+	static void Variable(DataParser& parser)
+	{
+		String name = VariableName(parser);
+		if (name.empty()) {
+			parser.Error("Expected a variable but got an empty name.");
+			return;
+		}
+
+		// Keywords are parsed like variables, but are really literals.
+		// Check for them here.
+		if (name == "true")
+			parser.Emit(Instruction::Literal, Variant(true));
+		else if (name == "false")
+			parser.Emit(Instruction::Literal, Variant(false));
+		else
+			parser.Emit(Instruction::Variable, Variant(name));
+	}
+
+	static void Add(DataParser& parser)
+	{
+		parser.Match('+');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Add);
+	}
+	static void Subtract(DataParser& parser)
+	{
+		parser.Match('-');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Subtract);
+	}
+	static void Multiply(DataParser& parser)
+	{
+		parser.Match('*');
+		parser.Push();
+		Factor(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Multiply);
+	}
+	static void Divide(DataParser& parser)
+	{
+		parser.Match('/');
+		parser.Push();
+		Factor(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Divide);
+	}
+
+	static void Not(DataParser& parser)
+	{
+		parser.Match('!');
+		Factor(parser);
+		parser.Emit(Instruction::Not);
+	}
+	static void Or(DataParser& parser)
+	{
+		// We already skipped the first '|' during expression
+		parser.Match('|');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Or);
+	}
+	static void And(DataParser& parser)
+	{
+		parser.Match('&', false);
+		parser.Match('&');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::And);
+	}
+	static void Less(DataParser& parser)
+	{
+		Instruction instruction = Instruction::Less;
+		parser.Match('<', false);
+		if (parser.Look() == '=') {
+			parser.Match('=');
+			instruction = Instruction::LessEq;
+		}
+		else {
+			parser.SkipWhitespace();
+		}
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(instruction);
+	}
+	static void Greater(DataParser& parser)
+	{
+		Instruction instruction = Instruction::Greater;
+		parser.Match('>', false);
+		if (parser.Look() == '=') {
+			parser.Match('=');
+			instruction = Instruction::GreaterEq;
+		}
+		else {
+			parser.SkipWhitespace();
+		}
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(instruction);
+	}
+	static void Equal(DataParser& parser)
+	{
+		parser.Match('=', false);
+		parser.Match('=');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Equal);
+	}
+	static void NotEqual(DataParser& parser)
+	{
+		parser.Match('!', false);
+		parser.Match('=');
+		parser.Push();
+		Term(parser);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::NotEqual);
+	}
+
+	static void Ternary(DataParser& parser)
+	{
+		parser.Match('?');
+		parser.Push();
+		Expression(parser);
+		parser.Push();
+		parser.Match(':');
+		Expression(parser);
+		parser.Pop(Register::C);
+		parser.Pop(Register::L);
+		parser.Emit(Instruction::Ternary);
+	}
+	static void Function(DataParser& parser)
+	{
+		// We already matched '|' during expression
+		String name = VariableName(parser);
+		if (name.empty()) {
+			parser.Error("Expected a transform name but got an empty name.");
+			return;
+		}
+
+		if (parser.Look() == '(')
+		{
+			int num_arguments = 0;
+			bool looping = true;
+
+			parser.Match('(');
+			if (parser.Look() == ')') {
+				parser.Match(')');
+				looping = false;
+			}
+			else
+				parser.Push();
+
+			while (looping)
+			{
+				num_arguments += 1;
+				Expression(parser);
+				parser.Push();
+
+				switch (parser.Look()) {
+				case ')': parser.Match(')'); looping = false; break;
+				case ',': parser.Match(','); break;
+				default:
+					parser.Expected("one of ')' or ','");
+					looping = false;
+				}
+			}
+
+			if (num_arguments > 0) {
+				parser.Arguments(num_arguments);
+				parser.Pop(Register::R);
+			}
+		}
+		else {
+			parser.SkipWhitespace();
+		}
+
+		parser.Emit(Instruction::Function, Variant(name));
+	}
+
+
+} // </namespace Parse>
+
+
+
+
+
+class DataInterpreter {
 public:
-	ExecutionContext(const Program& program) : program(program) {}
+	DataInterpreter(const DataExpressionInterface& interface, const Program& program) : interface(interface), program(program) {}
 
 	bool Error(String message) const
 	{
@@ -254,7 +640,7 @@ public:
 		return false;
 	}
 
-	bool Run() 
+	bool Run()
 	{
 		Log::Message(Log::LT_DEBUG, "Executing program");
 		DumpProgram();
@@ -269,7 +655,7 @@ public:
 		}
 
 		if (success)
-			Log::Message(Log::LT_DEBUG, "Succesfully finished execution of program with %d instructions.", program.size());
+			Log::Message(Log::LT_DEBUG, "Successfully finished execution of program with %d instructions.", program.size());
 		else
 			Log::Message(Log::LT_WARNING, "Failed executing program with %d instructions.", program.size());
 
@@ -281,8 +667,8 @@ public:
 		return success;
 	}
 
-	String Result() const {
-		return R.Get<String>();
+	Variant Result() const {
+		return R;
 	}
 
 	void DumpProgram()
@@ -300,9 +686,10 @@ private:
 	std::stack<Variant> stack;
 	std::vector<Variant> arguments;
 
+	const DataExpressionInterface& interface;
 	const Program& program;
 
-	bool Execute(Instruction instruction, const Variant& data)
+	bool Execute(const Instruction instruction, const Variant& data)
 	{
 		auto AnyString = [](const Variant& v1, const Variant& v2) {
 			return v1.GetType() == Variant::STRING || v2.GetType() == Variant::STRING;
@@ -338,8 +725,8 @@ private:
 		break;
 		case Instruction::Variable:
 		{
-			// TODO: fetch from data model (data is model address), write into R.
-			R = data;
+			// @todo @performance: Cache the address somehow.
+			R = interface.GetValue(interface.ParseAddress(data.Get<String>()));
 		}
 		break;
 		case Instruction::Add:
@@ -356,9 +743,13 @@ private:
 		case Instruction::Not:      R = Variant(!R.Get<bool>()); break;
 		case Instruction::And:      R = Variant(L.Get<bool>() && R.Get<bool>());  break;
 		case Instruction::Or:       R = Variant(L.Get<bool>() || R.Get<bool>());  break;
+		case Instruction::Less:       R = Variant(L.Get<float>() < R.Get<float>());  break;
+		case Instruction::LessEq:     R = Variant(L.Get<float>() <= R.Get<float>()); break;
+		case Instruction::Greater:    R = Variant(L.Get<float>() > R.Get<float>());  break;
+		case Instruction::GreaterEq:  R = Variant(L.Get<float>() >= R.Get<float>()); break;
 		case Instruction::Equal:
 		{
-			if(AnyString(L,R))
+			if (AnyString(L, R))
 				R = Variant(L.Get<String>() == R.Get<String>());
 			else
 				R = Variant(L.Get<float>() == R.Get<float>());
@@ -372,10 +763,12 @@ private:
 				R = Variant(L.Get<float>() != R.Get<float>());
 		}
 		break;
-		case Instruction::Less:       R = Variant(L.Get<float>() < R.Get<float>());  break;
-		case Instruction::LessEq:     R = Variant(L.Get<float>() <= R.Get<float>()); break;
-		case Instruction::Greater:    R = Variant(L.Get<float>() > R.Get<float>());  break;
-		case Instruction::GreaterEq:  R = Variant(L.Get<float>() >= R.Get<float>()); break;
+		case Instruction::Ternary:
+		{
+			if (L.Get<bool>())
+				R = C;
+		}
+		break;
 		case Instruction::Arguments:
 		{
 			if (!arguments.empty())
@@ -395,12 +788,6 @@ private:
 			}
 		}
 		break;
-		case Instruction::Ternary:
-		{
-			if (L.Get<bool>())
-				R = C;
-		}
-		break;
 		case Instruction::Function:
 		{
 			const String function_name = data.Get<String>();
@@ -418,455 +805,43 @@ private:
 		}
 		break;
 		default:
-			RMLUI_ERRORMSG("Instruction not yet implemented"); break;
+			RMLUI_ERRORMSG("Instruction not implemented."); break;
 		}
 		return true;
 	}
 };
 
 
-
-void StringLiteral(ParserContext& context)
-{
-	String str;
-
-	char c = context.Look();
-	bool previous_character_is_escape = false;
-
-	while (c != '\0' && ( c != '\'' || previous_character_is_escape))
-	{
-		previous_character_is_escape = (c == '\\');
-		str += c;
-		c = context.Next();
-	}
-
-	context.Emit(Instruction::Literal, Variant(str));
-}
-
-void NumberLiteral(ParserContext& context)
-{
-	String str;
-
-	bool first_match = false;
-	bool has_dot = false;
-	char c = context.Look();
-	if (c == '-') 
-	{
-		str += c;
-		c = context.Next();
-	}
-
-	while ((c >= '0' && c <= '9' ) || (c == '.' && !has_dot))
-	{
-		first_match = true;
-		str += c;
-		if (c == '.')
-			has_dot = true;
-		c = context.Next();
-	}
-
-	if (!first_match)
-	{
-		context.Error(CreateString(100, "Invalid number literal. Expected '0-9' or '.' but found '%c'.", c));
-		return;
-	}
-
-	float number = FromString(str, 0.0f);
-
-	context.Emit(Instruction::Literal, Variant(number));
-}
-
-bool IsVariableCharacter(char c, bool is_first_character)
-{
-	const bool is_alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-
-	if (is_first_character)
-		return is_alpha;
-
-	if (is_alpha || (c >= '0' && c <= '9'))
-		return true;
-
-	for (char valid_char : "_.[] ")
-	{
-		if (c == valid_char && valid_char != '\0')
-			return true;
-	}
-
-	return false;
-}
-
-String VariableName(ParserContext& context)
-{
-	String name;
-
-	bool is_first_character = true;
-	char c = context.Look();
-
-	while (IsVariableCharacter(c, is_first_character))
-	{
-		name += c;
-		c = context.Next();
-		is_first_character = false;
-	}
-
-	// Right trim spaces in name
-	size_t new_size = String::npos;
-	for (int i = int(name.size()) - 1; i >= 1; i--)
-	{
-		if (name[i] == ' ')
-			new_size = size_t(i);
-		else
-			break;
-	}
-	if (new_size != String::npos)
-		name.resize(new_size);
-
-	return name;
-}
-
-void DoVariable(ParserContext& context)
-{
-	String name = VariableName(context);
-	if (name.empty()) {
-		context.Error("Expected a variable but got an empty name.");
-		return;
-	}
-
-	// Keywords are parsed like variables, but are really literals.
-	// Check for them here.
-	if(name == "true")
-		context.Emit(Instruction::Literal, Variant(true));
-	else if(name == "false")
-		context.Emit(Instruction::Literal, Variant(false));
-	else
-		context.Emit(Instruction::Variable, Variant(name));
-}
-
-void Add(ParserContext& context)
-{
-	context.Match('+');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Add);
-}
-void Subtract(ParserContext& context)
-{
-	context.Match('-');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Subtract);
-}
-void Multiply(ParserContext& context)
-{
-	context.Match('*');
-	context.Push();
-	context.Enter(Type::Factor);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Multiply);
-}
-void Divide(ParserContext& context)
-{
-	context.Match('/');
-	context.Push();
-	context.Enter(Type::Factor);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Divide);
-}
-void Not(ParserContext& context)
-{
-	context.Match('!');
-	context.Enter(Type::Factor);
-	context.Emit(Instruction::Not);
-}
-void Or(ParserContext& context)
-{
-	// We already skipped the first '|' during expression
-	context.Match('|');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Or);
-}
-void And(ParserContext& context)
-{
-	context.Match('&', false);
-	context.Match('&');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::And);
-}
-void Equal(ParserContext& context)
-{
-	context.Match('=', false);
-	context.Match('=');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Equal);
-}
-void NotEqual(ParserContext& context)
-{
-	context.Match('!', false);
-	context.Match('=');
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(Instruction::NotEqual);
-}
-void Less(ParserContext& context)
-{
-	Instruction instruction = Instruction::Less;
-	context.Match('<',false);
-	if (context.Look() == '=') {
-		context.Match('=');
-		instruction = Instruction::LessEq;
-	}
-	else {
-		context.SkipWhitespace();
-	}
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(instruction);
-}
-void Greater(ParserContext& context)
-{
-	Instruction instruction = Instruction::Greater;
-	context.Match('>', false);
-	if (context.Look() == '=') {
-		context.Match('=');
-		instruction = Instruction::GreaterEq;
-	}
-	else {
-		context.SkipWhitespace();
-	}
-	context.Push();
-	context.Enter(Type::Term);
-	context.Pop(Register::L);
-	context.Emit(instruction);
-}
-void Ternary(ParserContext& context)
-{
-	context.Match('?');
-	context.Push();
-	context.Enter(Type::Expression);
-	context.Push();
-	context.Match(':');
-	context.Enter(Type::Expression);
-	context.Pop(Register::C);
-	context.Pop(Register::L);
-	context.Emit(Instruction::Ternary);
-}
-void Function(ParserContext& context)
-{
-	// We already matched '|' during expression
-	String name = VariableName(context);
-	if (name.empty()) {
-		context.Error("Expected a transform name but got an empty name.");
-		return;
-	}
-
-	if (context.Look() == '(')
-	{
-		int num_arguments = 0;
-		bool looping = true;
-
-		context.Match('(');
-		if (context.Look() == ')') {
-			context.Match(')');
-			looping = false;
-		}
-		else
-			context.Push();
-
-		while (looping)
-		{
-			num_arguments += 1;
-			context.Enter(Type::Expression);
-			context.Push();
-
-			switch (context.Look()) {
-			case ')': context.Match(')'); looping = false; break;
-			case ',': context.Match(','); break;
-			default:
-				context.Expected("one of ')' or ','");
-				looping = false;
-			}
-		}
-
-		if (num_arguments > 0) {
-			context.Arguments(num_arguments);
-			context.Pop(Register::R);
-		}
-	}
-	else {
-		context.SkipWhitespace();
-	}
-
-	context.Emit(Instruction::Function, Variant(name));
-}
-
-
-void Factor(ParserContext& context)
-{
-	const char c = context.Look();
-
-	if (c == '(')
-	{
-		context.Match('(');
-		context.Enter(Type::Expression);
-		context.Match(')');
-	}
-	else if (c == '\'')
-	{
-		context.Match('\'', false);
-		context.Enter(Type::StringLiteral);
-		context.Match('\'');
-	}
-	else if (c == '!')
-	{
-		context.Enter(Type::Not);
-		context.SkipWhitespace();
-	}
-	else if (c == '-' || (c >= '0' && c <= '9'))
-	{
-		context.Enter(Type::NumberLiteral);
-		context.SkipWhitespace();
-	}
-	else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
-	{
-		context.Enter(Type::Variable);
-		context.SkipWhitespace();
-	}
-	else
-		context.Expected("literal, variable name, parenthesis, or '!'");
-}
-
-void Term(ParserContext& context)
-{
-	context.Enter(Type::Factor);
-
-	bool looping = true;
-	while (looping)
-	{
-		switch (const char c = context.Look())
-		{
-		case '*': context.Enter(Type::Multiply); break;
-		case '/': context.Enter(Type::Divide); break;
-		default:
-			looping = false;
-		}
-	}
-}
-
-void Expression(ParserContext& context)
-{
-	context.Enter(Type::Term);
-
-	bool looping = true;
-	while (looping)
-	{
-		switch (char c = context.Look())
-		{
-		case '+': context.Enter(Type::Add); break;
-		case '-': context.Enter(Type::Subtract); break;
-		case '?': context.Enter(Type::Ternary); break;
-		case '|':
-		{
-			context.Match('|', false);
-			if(context.Look() == '|')
-				context.Enter(Type::Or);
-			else
-			{
-				context.SkipWhitespace();
-				context.Enter(Type::Function);
-			}
-		}
-		break;
-		case '&': context.Enter(Type::And); break;
-		case '=': context.Enter(Type::Equal); break;
-		case '!': context.Enter(Type::NotEqual); break;
-		case '<': context.Enter(Type::Less); break;
-		case '>': context.Enter(Type::Greater); break;
-		case '\0': 
-			context.ReachedEnd();
-			looping = false;
-			break;
-		default:
-			looping = false;
-		}
-	}
-}
-
-
-
-void ParserContext::Enter(Type type)
-{
-	parse_depth += 1;
-
-	switch (type)
-	{
-	case Type::Expression:    Expression(*this); break;
-	case Type::Factor:        Factor(*this); break;
-	case Type::Term:          Term(*this); break;
-	case Type::StringLiteral: StringLiteral(*this); break;
-	case Type::NumberLiteral: NumberLiteral(*this); break;
-	case Type::Variable:      DoVariable(*this); break;
-	case Type::Add:           Parser::Add(*this); break;
-	case Type::Subtract:      Subtract(*this); break;
-	case Type::Multiply:      Multiply(*this); break;
-	case Type::Divide:        Divide(*this); break;
-	case Type::Not:           Not(*this); break;
-	case Type::And:           And(*this); break;
-	case Type::Or:            Or(*this); break;
-	case Type::Equal:         Equal(*this); break;
-	case Type::NotEqual:      NotEqual(*this); break;
-	case Type::Less:          Less(*this); break;
-	case Type::Greater:       Greater(*this); break;
-	case Type::Ternary:       Ternary(*this); break;
-	case Type::Function:      Function(*this); break;
-	default:
-		RMLUI_ERRORMSG("Unhandled parser type"); break;
-	}
-
-	parse_depth -= 1;
-}
-
-String ParserContext::Execute() {
-	if (parse_error) {
-		Log::Message(Log::LT_ERROR, "Can not execute program, parsing was not succesful.");
-		return String();
-	}
-	ExecutionContext execution(program);
-	if (execution.Run())
-		return execution.Result();
-	return String();
-}
 
 
 
 struct TestParser {
 	TestParser() {
-		//ParserContext("'hello' + ' ' + 'world'").Parse();
-		//ParserContext("5+(1+2)").Parse();
-		//ParserContext("5.2 + 19 + 'test'").Parse();
-		//ParserContext("(color_name) + (': rgba(' + color_value + ')')").Parse();
-		//ParserContext("!!10 - 1 ? 'hello' : 'world'").Parse();
+
+		//DataParser("'hello' + ' ' + 'world'").Parse();
+		//DataParser("5+(1+2)").Parse();
+		//DataParser("5.2 + 19 + 'test'").Parse();
+		//DataParser("(color_name) + (': rgba(' + color_value + ')')").Parse();
+		//DataParser("!!10 - 1 ? 'hello' : 'world'").Parse();
 		//int test = 1 + (true ? 0-5 : 10 + 5);
-		//ParserContext("1 + (true ? 0-5 : 10 + 5)").Parse();
-		String result = ParserContext("'hello world' | uppercase(5 + 12 == 17 ? 'yes' : 'no', 9*2)").Parse().Execute();
-
-		bool finished = true;
+		//DataParser("1 + (true ? 0-5 : 10 + 5)").Parse();
+		String result = TestExpression("'hello world' | uppercase(5 + 12 == 17 ? 'yes' : 'no', 9*2)");
 	}
+
+	String TestExpression(String expression)
+	{
+		DataParser parser(expression);
+		if (parser.Parse())
+		{
+			DataExpressionInterface interface;
+			Program program = parser.ReleaseProgram();
+			DataInterpreter interpreter(interface, program);
+			if (interpreter.Run())
+				return interpreter.Result().Get<String>();
+		}
+		return "<invalid expression>";
+	};
 };
-
-
-
-
-} // </namespace Parser>
 
 
 
@@ -875,6 +850,50 @@ DataExpression::DataExpression(String expression) : expression(expression) {}
 
 DataExpression::~DataExpression()
 {
+}
+
+bool DataExpression::Parse(const DataExpressionInterface& interface)
+{
+	// @todo: Remove, debugging only
+	static TestParser test_parser;
+
+	// TODO:
+	//  1. Parse and cache data addresses.
+	//  2. Add dependent data variables to list.
+	//  3. Create a plug-in wrapper for use by scripting languages to replace this parser. Design wrapper as for events.
+	//  4. Make double base type for numbers instead of float
+
+	DataParser parser(expression);
+	if (!parser.Parse())
+		return false;
+
+	program = parser.ReleaseProgram();
+	
+	return true;
+}
+
+bool DataExpression::Run(const DataExpressionInterface& interface, Variant& out_value)
+{
+	DataInterpreter interpreter(interface, program);
+	
+	if (!interpreter.Run())
+		return false;
+
+	out_value = interpreter.Result();
+	return true;
+}
+
+DataExpressionInterface::DataExpressionInterface(DataModel* data_model, Element* element) : data_model(data_model), element(element)
+{}
+
+Address DataExpressionInterface::ParseAddress(const String& address_str) const {
+	return data_model ? data_model->ResolveAddress(address_str, element) : Address();
+}
+Variant DataExpressionInterface::GetValue(const Address& address) const {
+	Variant result;
+	if (data_model)
+		data_model->GetValue(address, result);
+	return result;
 }
 
 }

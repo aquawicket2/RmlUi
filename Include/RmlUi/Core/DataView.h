@@ -43,6 +43,8 @@ namespace Core {
 class Element;
 class ElementText;
 class DataModel;
+class DataExpression;
+using DataExpressionPtr = UniquePtr<DataExpression>;
 
 class RMLUICORE_API DataView : NonCopyMoveable {
 public:
@@ -114,15 +116,14 @@ private:
 class DataViewStyle final : public DataView {
 public:
 	DataViewStyle(DataModel& model, Element* element, const String& binding_name, const String& property_name);
+	~DataViewStyle();
 
 	bool Update(DataModel& model) override;
 
-	StringList GetVariableNameList() const override {
-		return variable_address.empty() ? StringList() : StringList{ variable_address.front().name };
-	}
+	StringList GetVariableNameList() const override;
 private:
-	Address variable_address;
 	String property_name;
+	DataExpressionPtr data_expression;
 };
 
 

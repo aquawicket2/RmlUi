@@ -63,6 +63,11 @@ public:
 		Variable variable = GetVariable(address);
 		return variable && variable.Get(variant) && variant.GetInto<T>(out_value);
 	}
+	template<>
+	bool GetValue(const Address& address, Variant& out_value) const {
+		Variable variable = GetVariable(address);
+		return variable && variable.Get(out_value);
+	}
 
 	void DirtyVariable(const String& variable_name);
 	bool IsVariableDirty(const String& variable_name) const;

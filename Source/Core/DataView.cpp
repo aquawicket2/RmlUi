@@ -29,6 +29,7 @@
 #include "precompiled.h"
 #include "../../Include/RmlUi/Core/DataModel.h"
 #include "../../Include/RmlUi/Core/DataView.h"
+#include "DataParser.h"
 
 namespace Rml {
 namespace Core {
@@ -192,21 +193,38 @@ bool DataViewAttribute::Update(DataModel& model)
 DataViewStyle::DataViewStyle(DataModel& model, Element* element, const String& binding_name, const String& property_name)
 	: DataView(element), property_name(property_name)
 {
-	variable_address = model.ResolveAddress(binding_name, element);
-	
-	if (variable_address.empty() || property_name.empty())
+	data_expression = std::make_unique<DataExpression>(binding_name);
+
+	DataExpressionInterface interface(&model, element);
+
+	if(!data_expression->Parse(interface))
+	{
 		InvalidateView();
+		return;
+	}
+
+
+	//variable_address = model.ResolveAddress(binding_name, element);
+	//
+	//if (variable_address.empty() || property_name.empty())
+	//	InvalidateView();
+}
+
+DataViewStyle::~DataViewStyle()
+{
 }
 
 
 bool DataViewStyle::Update(DataModel& model)
 {
 	bool result = false;
-	String value;
+	Variant variant;
 	Element* element = GetElement();
-
-	if (model.GetValue(variable_address, value) && element)
+	DataExpressionInterface interface(&model, element);
+	
+	if (element && data_expression->Run(interface, variant))
 	{
+		const String value = variant.Get<String>();
 		const Property* p = element->GetLocalProperty(property_name);
 		if (!p || p->Get<String>() != value)
 		{
@@ -215,6 +233,10 @@ bool DataViewStyle::Update(DataModel& model)
 		}
 	}
 	return result;
+}
+
+StringList DataViewStyle::GetVariableNameList() const {
+	return data_expression ? data_expression->GetVariableNameList() : StringList();// variable_address.empty() ? StringList() : StringList{ variable_address.front().name };
 }
 
 

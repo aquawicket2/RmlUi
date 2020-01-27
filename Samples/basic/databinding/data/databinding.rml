@@ -168,7 +168,7 @@ form h2
 	<input type="range" name="rating" min="0" max="100" step="1" value="50" data-value="rating"/>
 	<div data-if="good_rating">Thanks for the <span data-if="good_rating">good</span><span data-if="great_rating"> and awesome</span> rating!</div>
 	<h1>{{delightful_invader.name}}</h1>
-	<img data-attr-sprite="delightful_invader.sprite" data-style-image-color="delightful_invader.color"/>
+	<img data-attr-sprite="delightful_invader.sprite" data-style-image-color="delightful_invader.sprite == 'icon-invader' ? 'black' : 'green'"/>
 	<p>
 		Indices: <span data-for="i : indices"> {{i}} </span>
 	</p>
