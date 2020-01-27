@@ -67,7 +67,7 @@ enum class Instruction { // Assignment (register/stack) = Read (register R/L/C, 
 	Push      = 'P',     //      S+ = R
 	Pop       = 'o',     // <R/L/C> = S-  (D determines R/L/C)
 	Literal   = 'D',     //       R = D
-	Variable  = 'V',     //       R = DataModel.GetVariable(D)
+	Variable  = 'V',     //       R = DataModel.GetVariable(D)  (D is an index into the variable address list)
 	Add       = '+',     //       R = L + R
 	Subtract  = '-',     //       R = L - R
 	Multiply  = '*',     //       R = L * R
@@ -95,7 +95,6 @@ struct InstructionData {
 	Instruction instruction;
 	Variant data;
 };
-using Program = std::vector<InstructionData>;
 
 namespace Parse {
 	static void Expression(DataParser& parser);
@@ -104,13 +103,11 @@ namespace Parse {
 
 class DataParser {
 public:
-	DataParser(String expression) : expression(std::move(expression)) {}
+	DataParser(String expression, DataVariableInterface variable_interface = {}) : expression(std::move(expression)), variable_interface(variable_interface) {}
 
 	char Look() {
-		if (index >= expression.size()) {
-			reached_end = true;
+		if (reached_end)
 			return '\0';
-		}
 		return expression[index];
 	}
 
@@ -127,6 +124,8 @@ public:
 
 	char Next() {
 		++index;
+		if (index >= expression.size())
+			reached_end = true;
 		return Look();
 	}
 
@@ -161,10 +160,12 @@ public:
 	{
 		Log::Message(Log::LT_DEBUG, "Parsing expression: %s", expression.c_str());
 		program.clear();
+		variable_addresses.clear();
 		index = 0;
 		reached_end = false;
 		parse_error = false;
-		
+
+		SkipWhitespace();
 		Parse::Expression(*this);
 		
 		if (!reached_end) {
@@ -181,11 +182,16 @@ public:
 		RMLUI_ASSERT(!parse_error);
 		return std::move(program);
 	}
+	AddressList ReleaseAddresses() {
+		RMLUI_ASSERT(!parse_error);
+		return std::move(variable_addresses);
+	}
 
 	void Emit(Instruction instruction, Variant data = Variant())
 	{
-		RMLUI_ASSERTMSG(instruction != Instruction::Push && instruction != Instruction::Pop && instruction != Instruction::Arguments, 
-			"Use the Push(), Pop(), or Arguments() procedures for stack manipulating instructions.");
+		RMLUI_ASSERTMSG(instruction != Instruction::Push && instruction != Instruction::Pop &&
+			instruction != Instruction::Arguments && instruction != Instruction::Variable,
+			"Use the Push(), Pop(), Arguments(), and Variable() procedures for stack manipulation and variable instructions.");
 		program.push_back(InstructionData{ instruction, std::move(data) });
 	}
 	void Push() {
@@ -208,17 +214,29 @@ public:
 		program_stack_size -= num_arguments;
 		program.push_back(InstructionData{ Instruction::Arguments, Variant(int(num_arguments)) });
 	}
+	void Variable(const String& name) {
+		Address address = variable_interface.ParseAddress(name);
+		if (address.empty()) {
+			Error(CreateString(name.size() + 50, "Invalid variable name '%s'.", name.c_str()));
+			return;
+		}
+		int index = int(variable_addresses.size());
+		variable_addresses.push_back(std::move(address));
+		program.push_back(InstructionData{ Instruction::Variable, Variant(int(index)) });
+	}
 
 private:
 	const String expression;
+	DataVariableInterface variable_interface;
 
 	size_t index = 0;
 	bool reached_end = false;
 	bool parse_error = true;
-
 	int program_stack_size = 0;
 
 	Program program;
+	
+	AddressList variable_addresses;
 };
 
 
@@ -346,6 +364,7 @@ namespace Parse {
 			{
 			case '*': Multiply(parser); break;
 			case '/': Divide(parser); break;
+			case '\0': looping = false; break;
 			default:
 				looping = false;
 			}
@@ -423,11 +442,18 @@ namespace Parse {
 		String str;
 
 		char c = parser.Look();
-		bool previous_character_is_escape = false;
+		char c_prev = '\0';
 
-		while (c != '\0' && (c != '\'' || previous_character_is_escape))
+		while (c != '\0' && (c != '\'' || c_prev == '\\'))
 		{
-			previous_character_is_escape = (c == '\\');
+			if (c_prev == '\\' && (c == '\\' || c == '\'')) {
+				str.pop_back();
+				c_prev = '\0';
+			}
+			else {
+				c_prev = c;
+			}
+
 			str += c;
 			c = parser.Next();
 		}
@@ -449,7 +475,7 @@ namespace Parse {
 		else if (name == "false")
 			parser.Emit(Instruction::Literal, Variant(false));
 		else
-			parser.Emit(Instruction::Variable, Variant(name));
+			parser.Variable(name);
 	}
 
 	static void Add(DataParser& parser)
@@ -630,7 +656,7 @@ namespace Parse {
 
 class DataInterpreter {
 public:
-	DataInterpreter(const DataExpressionInterface& interface, const Program& program) : interface(interface), program(program) {}
+	DataInterpreter(const Program& program, const AddressList& addresses, DataVariableInterface variable_interface) : program(program), addresses(addresses), variable_interface(variable_interface) {}
 
 	bool Error(String message) const
 	{
@@ -686,8 +712,9 @@ private:
 	std::stack<Variant> stack;
 	std::vector<Variant> arguments;
 
-	const DataExpressionInterface& interface;
 	const Program& program;
+	const AddressList& addresses;
+	DataVariableInterface variable_interface;
 
 	bool Execute(const Instruction instruction, const Variant& data)
 	{
@@ -725,8 +752,11 @@ private:
 		break;
 		case Instruction::Variable:
 		{
-			// @todo @performance: Cache the address somehow.
-			R = interface.GetValue(interface.ParseAddress(data.Get<String>()));
+			size_t variable_index = size_t(data.Get<int>(-1));
+			if (variable_index < addresses.size())
+				R = variable_interface.GetValue(addresses[variable_index]);
+			else
+				return Error("Variable address not found.");
 		}
 		break;
 		case Instruction::Add:
@@ -825,7 +855,12 @@ struct TestParser {
 		//DataParser("!!10 - 1 ? 'hello' : 'world'").Parse();
 		//int test = 1 + (true ? 0-5 : 10 + 5);
 		//DataParser("1 + (true ? 0-5 : 10 + 5)").Parse();
-		String result = TestExpression("'hello world' | uppercase(5 + 12 == 17 ? 'yes' : 'no', 9*2)");
+		String result;
+		result = TestExpression("'hello world' | uppercase(5 + 12 == 17 ? 'yes' : 'no', 9*2)");
+		result = TestExpression(R"('hello wor\'ld')");
+
+		String alt = "hello wor\ld";
+
 	}
 
 	String TestExpression(String expression)
@@ -833,9 +868,11 @@ struct TestParser {
 		DataParser parser(expression);
 		if (parser.Parse())
 		{
-			DataExpressionInterface interface;
+			DataVariableInterface interface;
 			Program program = parser.ReleaseProgram();
-			DataInterpreter interpreter(interface, program);
+			AddressList addresses = parser.ReleaseAddresses();
+
+			DataInterpreter interpreter(program, addresses, interface);
 			if (interpreter.Run())
 				return interpreter.Result().Get<String>();
 		}
@@ -852,29 +889,30 @@ DataExpression::~DataExpression()
 {
 }
 
-bool DataExpression::Parse(const DataExpressionInterface& interface)
+bool DataExpression::Parse(const DataVariableInterface& variable_interface)
 {
 	// @todo: Remove, debugging only
 	static TestParser test_parser;
 
 	// TODO:
-	//  1. Parse and cache data addresses.
-	//  2. Add dependent data variables to list.
 	//  3. Create a plug-in wrapper for use by scripting languages to replace this parser. Design wrapper as for events.
 	//  4. Make double base type for numbers instead of float
+	//  5. Add tests
+	//  6. Function callback
 
-	DataParser parser(expression);
+	DataParser parser(expression, variable_interface);
 	if (!parser.Parse())
 		return false;
 
 	program = parser.ReleaseProgram();
-	
+	addresses = parser.ReleaseAddresses();
+
 	return true;
 }
 
-bool DataExpression::Run(const DataExpressionInterface& interface, Variant& out_value)
+bool DataExpression::Run(const DataVariableInterface& variable_interface, Variant& out_value)
 {
-	DataInterpreter interpreter(interface, program);
+	DataInterpreter interpreter(program, addresses, variable_interface);
 	
 	if (!interpreter.Run())
 		return false;
@@ -883,13 +921,25 @@ bool DataExpression::Run(const DataExpressionInterface& interface, Variant& out_
 	return true;
 }
 
-DataExpressionInterface::DataExpressionInterface(DataModel* data_model, Element* element) : data_model(data_model), element(element)
+StringList DataExpression::GetVariableNameList() const
+{
+	StringList list;
+	list.reserve(addresses.size());
+	for (const Address& address : addresses)
+	{
+		if (!address.empty())
+			list.push_back(address[0].name);
+	}
+	return list;
+}
+
+DataVariableInterface::DataVariableInterface(DataModel* data_model, Element* element) : data_model(data_model), element(element)
 {}
 
-Address DataExpressionInterface::ParseAddress(const String& address_str) const {
+Address DataVariableInterface::ParseAddress(const String& address_str) const {
 	return data_model ? data_model->ResolveAddress(address_str, element) : Address();
 }
-Variant DataExpressionInterface::GetValue(const Address& address) const {
+Variant DataVariableInterface::GetValue(const Address& address) const {
 	Variant result;
 	if (data_model)
 		data_model->GetValue(address, result);

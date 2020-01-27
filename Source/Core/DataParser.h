@@ -40,11 +40,12 @@ class Element;
 class DataModel;
 struct InstructionData;
 using Program = std::vector<InstructionData>;
+using AddressList = std::vector<Address>;
 
-class DataExpressionInterface {
+class DataVariableInterface {
 public:
-    DataExpressionInterface() = default;
-    DataExpressionInterface(DataModel* data_model, Element* element);
+    DataVariableInterface() = default;
+    DataVariableInterface(DataModel* data_model, Element* element);
 
     Address ParseAddress(const String& address_str) const;
     Variant GetValue(const Address& address) const;
@@ -59,19 +60,18 @@ public:
     DataExpression(String expression);
     ~DataExpression();
 
-    bool Parse(const DataExpressionInterface& interface);
+    bool Parse(const DataVariableInterface& variable_interface);
 
-    bool Run(const DataExpressionInterface& interface, Variant& out_value);
+    bool Run(const DataVariableInterface& variable_interface, Variant& out_value);
 
-    const StringList& GetVariableNameList() const { return variable_names; }
+    // Must be available after Parse()
+    StringList GetVariableNameList() const;
 
 private:
     String expression;
-    StringList variable_names;
-
-    UnorderedMap<String, Address> variable_address_map;
-
+    
     Program program;
+    AddressList addresses;
 };
 
 
