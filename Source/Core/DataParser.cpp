@@ -433,7 +433,7 @@ namespace Parse {
 			return;
 		}
 
-		float number = FromString(str, 0.0f);
+		const double number = FromString(str, 0.0);
 
 		parser.Emit(Instruction::Literal, Variant(number));
 	}
@@ -764,25 +764,25 @@ private:
 			if (AnyString(L, R))
 				R = Variant(L.Get<String>() + R.Get<String>());
 			else
-				R = Variant(L.Get<float>() + R.Get<float>());
+				R = Variant(L.Get<double>() + R.Get<double>());
 		}
 		break;
-		case Instruction::Subtract: R = Variant(L.Get<float>() - R.Get<float>()); break;
-		case Instruction::Multiply: R = Variant(L.Get<float>() * R.Get<float>()); break;
-		case Instruction::Divide:   R = Variant(L.Get<float>() / R.Get<float>()); break;
+		case Instruction::Subtract: R = Variant(L.Get<double>() - R.Get<double>()); break;
+		case Instruction::Multiply: R = Variant(L.Get<double>() * R.Get<double>()); break;
+		case Instruction::Divide:   R = Variant(L.Get<double>() / R.Get<double>()); break;
 		case Instruction::Not:      R = Variant(!R.Get<bool>()); break;
 		case Instruction::And:      R = Variant(L.Get<bool>() && R.Get<bool>());  break;
 		case Instruction::Or:       R = Variant(L.Get<bool>() || R.Get<bool>());  break;
-		case Instruction::Less:       R = Variant(L.Get<float>() < R.Get<float>());  break;
-		case Instruction::LessEq:     R = Variant(L.Get<float>() <= R.Get<float>()); break;
-		case Instruction::Greater:    R = Variant(L.Get<float>() > R.Get<float>());  break;
-		case Instruction::GreaterEq:  R = Variant(L.Get<float>() >= R.Get<float>()); break;
+		case Instruction::Less:       R = Variant(L.Get<double>() < R.Get<double>());  break;
+		case Instruction::LessEq:     R = Variant(L.Get<double>() <= R.Get<double>()); break;
+		case Instruction::Greater:    R = Variant(L.Get<double>() > R.Get<double>());  break;
+		case Instruction::GreaterEq:  R = Variant(L.Get<double>() >= R.Get<double>()); break;
 		case Instruction::Equal:
 		{
 			if (AnyString(L, R))
 				R = Variant(L.Get<String>() == R.Get<String>());
 			else
-				R = Variant(L.Get<float>() == R.Get<float>());
+				R = Variant(L.Get<double>() == R.Get<double>());
 		}
 		break;
 		case Instruction::NotEqual:
@@ -790,7 +790,7 @@ private:
 			if (AnyString(L, R))
 				R = Variant(L.Get<String>() != R.Get<String>());
 			else
-				R = Variant(L.Get<float>() != R.Get<float>());
+				R = Variant(L.Get<double>() != R.Get<double>());
 		}
 		break;
 		case Instruction::Ternary:
@@ -896,7 +896,6 @@ bool DataExpression::Parse(const DataVariableInterface& variable_interface)
 
 	// TODO:
 	//  3. Create a plug-in wrapper for use by scripting languages to replace this parser. Design wrapper as for events.
-	//  4. Make double base type for numbers instead of float
 	//  5. Add tests
 	//  6. Function callback
 
