@@ -91,6 +91,9 @@ public:
 	/// Access the current parse frame.
 	const ParseFrame* GetParseFrame() const;
 
+	/// Returns the source URL of this parse.
+	const URL& GetSourceURL() const;
+
 protected:
 	/// Called when the parser finds the beginning of an element tag.
 	void HandleElementStart(const String& name, const XMLAttributes& attributes) override;

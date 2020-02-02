@@ -45,6 +45,7 @@ static SharedPtr<XMLNodeHandler> default_node_handler;
 XMLParser::XMLParser(Element* root)
 {
 	RegisterCDATATag("script");
+	RegisterInnerXMLAttribute("data-for");
 
 	// Add the first frame.
 	ParseFrame frame;
@@ -108,6 +109,12 @@ bool XMLParser::PushHandler(const String& tag)
 const XMLParser::ParseFrame* XMLParser::GetParseFrame() const
 {
 	return &stack.top();
+}
+
+const URL& XMLParser::GetSourceURL() const
+{
+	RMLUI_ASSERT(GetSourceURLPtr());
+	return *GetSourceURLPtr();
 }
 
 /// Called when the parser finds the beginning of an element tag.

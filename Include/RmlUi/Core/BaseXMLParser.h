@@ -54,6 +54,14 @@ class RMLUICORE_API BaseXMLParser
 		/// @param[in] tag The tag to register as containing generic character data.
 		void RegisterCDATATag(const String& tag);
 
+		/// When an XML attribute with the given name is encountered during parsing, then all content below the current
+		/// node is treated as data.
+		/// @note While children nodes are treated as data (text), it is assumed that the content represents valid XML.
+		///         The parsing proceeds as normal except that the Handle...() functions are not called until the
+		///         starting node is closed. Then, all its contents are submitted as Data (raw text string).
+		/// @note In particular, this behavior is useful for some data-binding views.
+		void RegisterInnerXMLAttribute(const String& attribute_name);
+
 		/// Parses the given stream as an XML file, and calls the handlers when
 		/// interesting phenomena are encountered.
 		void Parse(Stream* stream);
@@ -64,9 +72,6 @@ class RMLUICORE_API BaseXMLParser
 		/// Get the line number of the last open tag in the stream.
 		int GetLineNumberOpenTag() const;
 
-		// Treats all the inner contents of the currently parsing element as CData, including children nodes.
-		void TreatElementContentAsCDATA();
-
 		/// Called when the parser finds the beginning of an element tag.
 		virtual void HandleElementStart(const String& name, const XMLAttributes& attributes);
 		/// Called when the parser finds the end of an element tag.
@@ -74,26 +79,29 @@ class RMLUICORE_API BaseXMLParser
 		/// Called when the parser encounters data.
 		virtual void HandleData(const String& data);
 
-		/// Returns the source URL of this parse. Only valid during parsing.
-		const URL& GetSourceURL() const;
+	protected:
+		const URL* GetSourceURLPtr() const;
 
 	private:
 		const URL* source_url = nullptr;
 		String xml_source;
 		size_t xml_index = 0;
 
-		void Next();
-		bool AtEnd() const;
-		char Look() const;
+		inline void Next();
+		inline bool AtEnd() const;
+		inline char Look() const;
+
+		inline void HandleElementStartInternal(const String& name, const XMLAttributes& attributes);
+		inline void HandleElementEndInternal(const String& name);
+		inline void HandleDataInternal(const String& data);
 
 		void ReadHeader();
 		void ReadBody();
-
-
 		bool ReadOpenTag();
-		bool ReadCloseTag();
-		bool ReadAttributes(XMLAttributes& attributes);
-		bool ReadCDATA(const char* tag_terminator = nullptr, bool only_terminate_at_same_xml_depth = false);
+
+		bool ReadCloseTag(size_t xml_index_tag);
+		bool ReadAttributes(XMLAttributes& attributes, bool& parse_raw_xml_content);
+		bool ReadCDATA(const char* tag_terminator = nullptr);
 
 		// Reads from the stream until a complete word is found.
 		// @param[out] word Word thats been found
@@ -107,10 +115,14 @@ class RMLUICORE_API BaseXMLParser
 		// the characters will be consumed.
 		bool PeekString(const char* string, bool consume = true);
 
-		int line_number;
-		int line_number_open_tag;
-		int open_tag_depth;
-		bool treat_content_as_cdata;
+		int line_number = 0;
+		int line_number_open_tag = 0;
+		int open_tag_depth = 0;
+
+		// Enabled when an attribute for inner xml data is encountered (see description in Register...() above).
+		bool inner_xml_data = false;
+		int inner_xml_data_terminate_depth = 0;
+		size_t inner_xml_data_index_begin = 0;
 
 		// The element attributes being read.
 		XMLAttributes attributes;
@@ -118,6 +130,7 @@ class RMLUICORE_API BaseXMLParser
 		String data;
 
 		SmallUnorderedSet< String > cdata_tags;
+		SmallUnorderedSet< String > attributes_for_inner_xml_data;
 };
 
 }

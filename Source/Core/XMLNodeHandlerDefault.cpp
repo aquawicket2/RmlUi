@@ -64,11 +64,6 @@ Element* XMLNodeHandlerDefault::ElementStart(XMLParser* parser, const String& na
 	// Move and append the element to the parent
 	Element* result = parent->AppendChild(std::move(element));
 
-	if (result->GetDataModel() && attributes.count("data-for") == 1)
-	{
-		parser->TreatElementContentAsCDATA();
-	}
-
 	return result;
 }
 
