@@ -37,6 +37,7 @@ namespace Core {
 
 class Context;
 class ContextInstancer;
+class DataViewInstancer;
 class Decorator;
 class DecoratorInstancer;
 class Element;
@@ -172,6 +173,11 @@ public:
 	/// @param[in] value The parameters to the event listener.
 	/// @return The instanced event listener.
 	static EventListener* InstanceEventListener(const String& value, Element* element);
+
+	// TODO documentation
+	static void RegisterDataViewInstancer(DataViewInstancer* instancer, const String& name, bool is_structural_view = false);
+	static DataViewPtr InstanceDataView(const String& name, Element* element);
+	static DataViewPtr InstanceStructuralDataView(const String& name, Element* element);
 
 private:
 	Factory();

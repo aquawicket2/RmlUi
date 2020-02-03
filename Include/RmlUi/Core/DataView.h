@@ -46,32 +46,132 @@ class DataModel;
 class DataExpression;
 using DataExpressionPtr = UniquePtr<DataExpression>;
 
-class RMLUICORE_API DataView : NonCopyMoveable {
+class RMLUICORE_API DataViewInstancer : public NonCopyMoveable {
+public:
+	DataViewInstancer() {}
+	virtual ~DataViewInstancer() {}
+	virtual DataViewPtr InstanceView(Element* element) = 0;
+};
+
+template<typename T>
+class DataViewInstancerDefault final : public DataViewInstancer {
+public:
+	DataViewPtr InstanceView(Element* element) override {
+		return DataViewPtr(new T(element));
+	}
+};
+
+
+class RMLUICORE_API DataView : public Releasable {
 public:
 	virtual ~DataView();
+
+	// Initialize the data view.
+	// @param model The data model the view will be attached to.
+	// @param data_expression The value of the attribute associated with the The attribute value associated
+	virtual bool Initialize(DataModel& model, Element* element, const String& data_expression, const String& view_label) = 0;
+
+	// Update the data view.
+	// Returns true if the update resulted in a change.
 	virtual bool Update(DataModel& model) = 0;
+
+	// Returns the list of data variable name(s) which can modify this view.
 	virtual StringList GetVariableNameList() const = 0;
 
-	bool IsValid() const { return (bool)attached_element; }
-	explicit operator bool() const { return IsValid(); }
 
+	// Returns the attached element if it still exists.
 	Element* GetElement() const;
-	int GetElementDepth() const { return element_depth; }
+
+	// Returns the depth of the attached element in the document tree.
+	int GetElementDepth() const;
+	
+	// Returns true if the element still exists
+	bool IsValid() const;
 	
 protected:
 	DataView(Element* element);
-
-	void InvalidateView() { attached_element.reset(); }
+	void Release() override;
 
 private:
 	ObserverPtr<Element> attached_element;
 	int element_depth;
 };
 
+
+
+class DataViewNamedExpression : public DataView {
+public:
+	DataViewNamedExpression(Element* element);
+	~DataViewNamedExpression();
+
+	bool Initialize(DataModel& model, Element* element, const String& data_expression_str, const String& view_label) override;
+
+	StringList GetVariableNameList() const override;
+
+protected:
+	const String& GetViewLabel() const;
+	DataExpression& GetDataExpression();
+
+private:
+	String view_label;
+	DataExpressionPtr data_expression;
+};
+
+
+class DataViewAttribute final : public DataViewNamedExpression {
+public:
+	DataViewAttribute(Element* element);
+	~DataViewAttribute();
+
+	bool Update(DataModel& model) override;
+};
+
+
+class DataViewStyle final : public DataViewNamedExpression {
+public:
+	DataViewStyle(Element* element);
+	~DataViewStyle();
+
+	bool Update(DataModel& model) override;
+};
+
+class DataViewClass final : public DataViewNamedExpression {
+public:
+	DataViewClass(Element* element);
+	~DataViewClass();
+
+	bool Update(DataModel& model) override;
+};
+
+class DataViewRml final : public DataViewNamedExpression {
+public:
+	DataViewRml(Element* element);
+	~DataViewRml();
+
+	bool Update(DataModel& model) override;
+
+private:
+	String previous_rml;
+};
+
+
+class DataViewIf final : public DataViewNamedExpression {
+public:
+	DataViewIf(Element* element);
+	~DataViewIf();
+
+	bool Update(DataModel& model) override;
+};
+
+
+
+
 class DataViewText final : public DataView {
 public:
-	DataViewText(DataModel& model, ElementText* in_element, const String& in_text);
+	DataViewText(Element* in_element);
 	~DataViewText();
+
+	bool Initialize(DataModel& model, Element* element, const String& data_expression, const String& view_label) override;
 
 	bool Update(DataModel& model) override;
 	StringList GetVariableNameList() const override;
@@ -91,84 +191,16 @@ private:
 
 
 
-class DataViewAttribute final : public DataView {
-public:
-	DataViewAttribute(DataModel& model, Element* element, const String& binding_name, const String& attribute_name);
-	~DataViewAttribute();
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-private:
-	String attribute_name;
-	DataExpressionPtr data_expression;
-};
-
-
-class DataViewStyle final : public DataView {
-public:
-	DataViewStyle(DataModel& model, Element* element, const String& binding_name, const String& property_name);
-	~DataViewStyle();
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-private:
-	String property_name;
-	DataExpressionPtr data_expression;
-};
-
-class DataViewClass final : public DataView {
-public:
-	DataViewClass(DataModel& model, Element* element, const String& binding_name, const String& class_name);
-	~DataViewClass();
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-
-private:
-	String class_name;
-	DataExpressionPtr data_expression;
-};
-
-class DataViewRml final : public DataView {
-public:
-	DataViewRml(DataModel& model, Element* element, const String& binding_name, const String& rml_contents);
-	~DataViewRml();
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-
-private:
-	String previous_rml;
-	DataExpressionPtr data_expression;
-};
-
-
-class DataViewIf final : public DataView {
-public:
-	DataViewIf(DataModel& model, Element* element, const String& binding_name);
-	~DataViewIf();
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-private:
-	DataExpressionPtr data_expression;
-};
-
-
 class DataViewFor final : public DataView {
 public:
-	DataViewFor(DataModel& model, Element* element, const String& binding_name, const String& rml_contents);
+	DataViewFor(Element* element);
+	~DataViewFor();
+
+	bool Initialize(DataModel& model, Element* element, const String& binding_str, const String& rml_contents) override;
 
 	bool Update(DataModel& model) override;
 
-	StringList GetVariableNameList() const override {
-		return variable_address.empty() ? StringList() : StringList{ variable_address.front().name };
-	}
+	StringList GetVariableNameList() const override;
 
 private:
 	DataAddress variable_address;
@@ -185,14 +217,14 @@ public:
 	DataViews();
 	~DataViews();
 
-	void Add(UniquePtr<DataView> view);
+	void Add(DataViewPtr view);
 
 	void OnElementRemove(Element* element);
 
 	bool Update(DataModel& model, const SmallUnorderedSet< String >& dirty_variables);
 
 private:
-	using DataViewList = std::vector<UniquePtr<DataView>>;
+	using DataViewList = std::vector<DataViewPtr>;
 
 	DataViewList views;
 	
