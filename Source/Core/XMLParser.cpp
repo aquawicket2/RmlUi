@@ -175,11 +175,11 @@ void XMLParser::HandleElementEnd(const String& _name)
 }
 
 /// Called when the parser encounters data.
-void XMLParser::HandleData(const String& data)
+void XMLParser::HandleData(const String& data, XMLDataType type)
 {
 	RMLUI_ZoneScoped;
 	if (stack.top().node_handler)
-		stack.top().node_handler->ElementData(this, data);
+		stack.top().node_handler->ElementData(this, data, type);
 }
 
 }

@@ -106,9 +106,10 @@ void BaseXMLParser::HandleElementEnd(const String& RMLUI_UNUSED_PARAMETER(name))
 }
 
 // Called when the parser encounters data.
-void BaseXMLParser::HandleData(const String& RMLUI_UNUSED_PARAMETER(data))
+void BaseXMLParser::HandleData(const String& RMLUI_UNUSED_PARAMETER(data), XMLDataType RMLUI_UNUSED_PARAMETER(type))
 {
 	RMLUI_UNUSED(data);
+	RMLUI_UNUSED(type);
 }
 
 /// Returns the source URL of this parse. Only valid during parsing.
@@ -143,10 +144,10 @@ void BaseXMLParser::HandleElementEndInternal(const String& name)
 		HandleElementEnd(name);
 }
 
-void BaseXMLParser::HandleDataInternal(const String& data)
+void BaseXMLParser::HandleDataInternal(const String& data, XMLDataType type)
 {
 	if (!inner_xml_data)
-		HandleData(data);
+		HandleData(data, type);
 }
 
 void BaseXMLParser::ReadHeader()
@@ -221,7 +222,7 @@ bool BaseXMLParser::ReadOpenTag()
 	// Opening tag; send data immediately and open the tag.
 	if (!data.empty())
 	{
-		HandleDataInternal(data);
+		HandleDataInternal(data, XMLDataType::Text);
 		data.clear();
 	}
 
@@ -295,7 +296,7 @@ bool BaseXMLParser::ReadOpenTag()
 				open_tag_depth--;
 				if (!data.empty())
 				{
-					HandleDataInternal(data);
+					HandleDataInternal(data, XMLDataType::CData);
 					data.clear();
 				}
 				HandleElementEndInternal(tag_name);
@@ -317,14 +318,16 @@ bool BaseXMLParser::ReadCloseTag(const size_t xml_index_tag)
 		// Closing the tag that initiated the inner xml data parsing. Set all its contents as Data to be
 		// submitted next, and disable the mode to resume normal parsing behavior.
 		RMLUI_ASSERT(inner_xml_data_index_begin <= xml_index_tag);
-		data = xml_source.substr(inner_xml_data_index_begin, xml_index_tag - inner_xml_data_index_begin);
 		inner_xml_data = false;
+		data = xml_source.substr(inner_xml_data_index_begin, xml_index_tag - inner_xml_data_index_begin);
+		HandleDataInternal(data, XMLDataType::InnerXML);
+		data.clear();
 	}
 
 	// Closing tag; send data immediately and close the tag.
 	if (!data.empty())
 	{
-		HandleDataInternal(data);
+		HandleDataInternal(data, XMLDataType::Text);
 		data.clear();
 	}
 

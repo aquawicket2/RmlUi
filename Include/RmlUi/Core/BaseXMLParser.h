@@ -39,6 +39,8 @@ namespace Core {
 class Stream;
 using XMLAttributes = Dictionary;
 
+enum class XMLDataType { Text, CData, InnerXML };
+
 /**
 	@author Peter Curry
  */
@@ -77,7 +79,7 @@ class RMLUICORE_API BaseXMLParser
 		/// Called when the parser finds the end of an element tag.
 		virtual void HandleElementEnd(const String& name);
 		/// Called when the parser encounters data.
-		virtual void HandleData(const String& data);
+		virtual void HandleData(const String& data, XMLDataType type);
 
 	protected:
 		const URL* GetSourceURLPtr() const;
@@ -87,13 +89,13 @@ class RMLUICORE_API BaseXMLParser
 		String xml_source;
 		size_t xml_index = 0;
 
-		inline void Next();
-		inline bool AtEnd() const;
-		inline char Look() const;
+		void Next();
+		bool AtEnd() const;
+		char Look() const;
 
-		inline void HandleElementStartInternal(const String& name, const XMLAttributes& attributes);
-		inline void HandleElementEndInternal(const String& name);
-		inline void HandleDataInternal(const String& data);
+		void HandleElementStartInternal(const String& name, const XMLAttributes& attributes);
+		void HandleElementEndInternal(const String& name);
+		void HandleDataInternal(const String& data, XMLDataType type);
 
 		void ReadHeader();
 		void ReadBody();

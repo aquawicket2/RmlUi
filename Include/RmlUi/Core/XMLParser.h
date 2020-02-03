@@ -100,7 +100,7 @@ protected:
 	/// Called when the parser finds the end of an element tag.
 	void HandleElementEnd(const String& name) override;
 	/// Called when the parser encounters data.
-	void HandleData(const String& data) override;
+	void HandleData(const String& data, XMLDataType type) override;
 
 private:
 	// The header of the document being parsed.
