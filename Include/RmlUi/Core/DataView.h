@@ -31,20 +31,15 @@
 
 #include "Header.h"
 #include "Types.h"
-#include "Variant.h"
-#include "StringUtilities.h"
 #include "Traits.h"
-#include "DataVariable.h"
 #include <unordered_map>
 
 namespace Rml {
 namespace Core {
 
 class Element;
-class ElementText;
 class DataModel;
-class DataExpression;
-using DataExpressionPtr = UniquePtr<DataExpression>;
+
 
 class RMLUICORE_API DataViewInstancer : public NonCopyMoveable {
 public:
@@ -61,15 +56,28 @@ public:
 	}
 };
 
+/**
+	Data view.
+
+	Data views are used to present a data variable in the document by different means.
+	A data view is declared in the document by the element attribute:
+	
+	    data-[type]-[modifier]="[expression]"
+
+	The modifier may or may not be required depending on the data view.
+ */
 
 class RMLUICORE_API DataView : public Releasable {
 public:
 	virtual ~DataView();
 
 	// Initialize the data view.
-	// @param model The data model the view will be attached to.
-	// @param data_expression The value of the attribute associated with the The attribute value associated
-	virtual bool Initialize(DataModel& model, Element* element, const String& data_expression, const String& view_label) = 0;
+	// @param[in] model The data model the view will be attached to.
+	// @param[in] element The element which spawned the view.
+	// @param[in] expression The value of the element's 'data-' attribute which spawned the view (see above).
+	// @param[in] modifier_or_inner_rml The modifier for the given view type (see above), or the inner rml contents for structural data views.
+	// @return True on success.
+	virtual bool Initialize(DataModel& model, Element* element, const String& expression, const String& modifier_or_inner_rml) = 0;
 
 	// Update the data view.
 	// Returns true if the update resulted in a change.
@@ -77,7 +85,6 @@ public:
 
 	// Returns the list of data variable name(s) which can modify this view.
 	virtual StringList GetVariableNameList() const = 0;
-
 
 	// Returns the attached element if it still exists.
 	Element* GetElement() const;
@@ -90,6 +97,8 @@ public:
 	
 protected:
 	DataView(Element* element);
+
+	// Delete this
 	void Release() override;
 
 private:
@@ -97,119 +106,6 @@ private:
 	int element_depth;
 };
 
-
-
-class DataViewNamedExpression : public DataView {
-public:
-	DataViewNamedExpression(Element* element);
-	~DataViewNamedExpression();
-
-	bool Initialize(DataModel& model, Element* element, const String& data_expression_str, const String& view_label) override;
-
-	StringList GetVariableNameList() const override;
-
-protected:
-	const String& GetViewLabel() const;
-	DataExpression& GetDataExpression();
-
-private:
-	String view_label;
-	DataExpressionPtr data_expression;
-};
-
-
-class DataViewAttribute final : public DataViewNamedExpression {
-public:
-	DataViewAttribute(Element* element);
-	~DataViewAttribute();
-
-	bool Update(DataModel& model) override;
-};
-
-
-class DataViewStyle final : public DataViewNamedExpression {
-public:
-	DataViewStyle(Element* element);
-	~DataViewStyle();
-
-	bool Update(DataModel& model) override;
-};
-
-class DataViewClass final : public DataViewNamedExpression {
-public:
-	DataViewClass(Element* element);
-	~DataViewClass();
-
-	bool Update(DataModel& model) override;
-};
-
-class DataViewRml final : public DataViewNamedExpression {
-public:
-	DataViewRml(Element* element);
-	~DataViewRml();
-
-	bool Update(DataModel& model) override;
-
-private:
-	String previous_rml;
-};
-
-
-class DataViewIf final : public DataViewNamedExpression {
-public:
-	DataViewIf(Element* element);
-	~DataViewIf();
-
-	bool Update(DataModel& model) override;
-};
-
-
-
-
-class DataViewText final : public DataView {
-public:
-	DataViewText(Element* in_element);
-	~DataViewText();
-
-	bool Initialize(DataModel& model, Element* element, const String& data_expression, const String& view_label) override;
-
-	bool Update(DataModel& model) override;
-	StringList GetVariableNameList() const override;
-
-private:
-	String BuildText() const;
-
-	struct DataEntry {
-		size_t index = 0; // Index into 'text'
-		DataExpressionPtr data_expression;
-		String value;
-	};
-
-	String text;
-	std::vector<DataEntry> data_entries;
-};
-
-
-
-class DataViewFor final : public DataView {
-public:
-	DataViewFor(Element* element);
-	~DataViewFor();
-
-	bool Initialize(DataModel& model, Element* element, const String& binding_str, const String& rml_contents) override;
-
-	bool Update(DataModel& model) override;
-
-	StringList GetVariableNameList() const override;
-
-private:
-	DataAddress variable_address;
-	String alias_name;
-	String rml_contents;
-	ElementAttributes attributes;
-
-	ElementList elements;
-};
 
 
 class RMLUICORE_API DataViews : NonCopyMoveable {

@@ -176,8 +176,8 @@ public:
 
 	// TODO documentation
 	static void RegisterDataViewInstancer(DataViewInstancer* instancer, const String& name, bool is_structural_view = false);
-	static DataViewPtr InstanceDataView(const String& name, Element* element);
-	static DataViewPtr InstanceStructuralDataView(const String& name, Element* element);
+
+	static DataViewPtr InstanceDataView(const String& type_name, Element* element, bool is_structural_view);
 
 private:
 	Factory();

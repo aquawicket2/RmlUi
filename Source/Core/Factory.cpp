@@ -31,6 +31,7 @@
 #include "../../Include/RmlUi/Core.h"
 
 #include "ContextInstancerDefault.h"
+#include "DataViewDefault.h"
 #include "DecoratorTiledBoxInstancer.h"
 #include "DecoratorTiledHorizontalInstancer.h"
 #include "DecoratorTiledImageInstancer.h"
@@ -529,42 +530,40 @@ EventListener* Factory::InstanceEventListener(const String& value, Element* elem
 
 void Factory::RegisterDataViewInstancer(DataViewInstancer* instancer, const String& name, bool is_structural_view)
 {
+	bool inserted = false;
 	if (is_structural_view)
 	{
-		structural_data_view_instancers[name] = instancer;
-		structural_data_view_names.push_back(name);
+		inserted = structural_data_view_instancers.emplace(name, instancer).second;
+		if (inserted)
+			structural_data_view_names.push_back(name);
 	}
 	else
 	{
-		data_view_instancers[name] = instancer;
+		inserted = data_view_instancers.emplace(name, instancer).second;
 	}
+	
+	if (!inserted)
+		Log::Message(Log::LT_WARNING, "Could not register data view instancer '%s'. The given name is already registered.", name.c_str());
 }
 
-DataViewPtr Factory::InstanceDataView(const String& name, Element* element)
+DataViewPtr Factory::InstanceDataView(const String& type_name, Element* element, bool is_structural_view)
 {
 	RMLUI_ASSERT(element);
 
-	auto it = data_view_instancers.find(name);
-	if (it != data_view_instancers.end())
-		return it->second->InstanceView(element);
-
-	// TODO
-	//Log::Message(Log::LT_WARNING, "Failed to instance data view 'data-%s'. Data view not found. In element: ", name.c_str(), element->GetAddress().c_str());
+	if (is_structural_view)
+	{
+		auto it = structural_data_view_instancers.find(type_name);
+		if (it != structural_data_view_instancers.end())
+			return it->second->InstanceView(element);
+	}
+	else
+	{
+		auto it = data_view_instancers.find(type_name);
+		if (it != data_view_instancers.end())
+			return it->second->InstanceView(element);
+	}
 	return nullptr;
 }
-
-DataViewPtr Factory::InstanceStructuralDataView(const String& name, Element* element)
-{
-	RMLUI_ASSERT(element);
-
-	auto it = structural_data_view_instancers.find(name);
-	if (it != structural_data_view_instancers.end())
-		return it->second->InstanceView(element);
-
-	//Log::Message(Log::LT_WARNING, "Failed to instance data view 'data-%s'. Data view not found. In element: ", name.c_str(), element->GetAddress().c_str());
-	return nullptr;
-}
-
 
 }
 }
