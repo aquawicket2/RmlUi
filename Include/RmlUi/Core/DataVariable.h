@@ -39,6 +39,8 @@ namespace Rml {
 namespace Core {
 
 class Variable;
+class DataModelHandle;
+class Event;
 
 template<typename T>
 struct is_valid_scalar {
@@ -53,6 +55,7 @@ enum class DataFunctionHandle : int {};
 using DataGetFunc = std::function<void(Variant&)>;
 using DataSetFunc = std::function<void(const Variant&)>;
 using DataTransformFunc = std::function<bool(Variant&, const VariantList&)>;
+using DataEventFunc = std::function<void(DataModelHandle, const Event&, const VariantList&)>;
 
 template<typename T> using MemberGetFunc = void(T::*)(Variant&);
 template<typename T> using MemberSetFunc = void(T::*)(const Variant&);

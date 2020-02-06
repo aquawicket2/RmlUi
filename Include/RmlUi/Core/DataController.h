@@ -33,6 +33,8 @@
 #include "Types.h"
 #include "Variant.h"
 #include "DataVariable.h"
+#include "EventListener.h"
+#include <unordered_map>
 
 namespace Rml {
 namespace Core {
@@ -65,8 +67,9 @@ protected:
 		address = std::move(new_address);
 	}
 
-	// Return true if value changed
-	virtual bool UpdateValue(Element* element, Variant& value_inout) = 0;
+    Variable GetVariable() const;
+
+    void SetValue(const Variant& new_value);
 
 private:
 	ObserverPtr<Element> attached_element;
@@ -75,23 +78,40 @@ private:
 };
 
 
-class DataControllerValue final : public DataController {
-public:
-	DataControllerValue(DataModel& model, Element* element, const String& in_value_name);
+// TODO: Listen to OnChange events instead?
 
-private:
-	bool UpdateValue(Element* element, Variant& value_inout) override;
+class DataControllerValue final : public DataController, private EventListener {
+public:
+	DataControllerValue(DataModel& model, Element* element, const String& in_variable_name);
+    ~DataControllerValue();
+
+protected:
+    void ProcessEvent(Event& event) override;
 };
+
+
+// TODO
+
+class DataControllerEvent final : public DataController, private EventListener {
+public:
+    DataControllerEvent(DataModel& model, Element* element, const String& in_variable_name);
+    ~DataControllerEvent();
+
+protected:
+    void ProcessEvent(Event& event) override;
+};
+
 
 
 class RMLUICORE_API DataControllers : NonCopyMoveable {
 public:
 	void Add(UniquePtr<DataController> controller);
 
-    void DirtyElement(DataModel& model, Element* element);
+    void OnElementRemove(Element* element);
 
 private:
-	UnorderedMap<Element*, UniquePtr<DataController>> controllers;
+    using ElementControllersMap = std::unordered_multimap<Element*, UniquePtr<DataController>>;
+    ElementControllersMap controllers;
 };
 
 

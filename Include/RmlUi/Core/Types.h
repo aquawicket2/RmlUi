@@ -189,6 +189,7 @@ using FontEffectsPtr = SharedPtr<const FontEffects>;
 // Data binding types
 class DataView;
 using DataViewPtr = UniqueReleaserPtr<DataView>;
+using DirtyVariables = SmallUnorderedSet<String>;
 
 }
 }

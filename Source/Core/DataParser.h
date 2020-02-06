@@ -49,6 +49,7 @@ public:
 
     DataAddress ParseAddress(const String& address_str) const;
     Variant GetValue(const DataAddress& address) const;
+    bool SetValue(const DataAddress& address, const Variant& value) const;
     bool CallTransform(const String& name, Variant& inout_result, const VariantList& arguments);
 
 private:
@@ -61,7 +62,7 @@ public:
     DataExpression(String expression);
     ~DataExpression();
 
-    bool Parse(const DataExpressionInterface& expression_interface);
+    bool Parse(const DataExpressionInterface& expression_interface, bool is_assignment_expression);
 
     bool Run(const DataExpressionInterface& expression_interface, Variant& out_value);
 

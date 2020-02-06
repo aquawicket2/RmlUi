@@ -84,6 +84,7 @@ enum class Instruction { // Assignment (register/stack) = Read (register R/L/C, 
 	Ternary   = '?',     //       R = L ? C : R
 	Arguments = 'a',     //      A+ = S-  (Repeated D times, where D gives the num. arguments)
 	Function  = 'F',     //       R = DataModel.Execute( D, R, A ); A.Clear();  (D determines function name, R the input value, A the arguments)
+	Assign    = 'A',     //       DataModel.SetVariable(D) = R
 };
 enum class Register {
 	R,
@@ -97,6 +98,7 @@ struct InstructionData {
 };
 
 namespace Parse {
+	static void Assignment(DataParser& parser);
 	static void Expression(DataParser& parser);
 };
 
@@ -156,7 +158,7 @@ public:
 		Expected(String(1, '\'') + expected + '\'');
 	}
 
-	bool Parse() 
+	bool Parse(bool is_assignment_expression)
 	{
 		program.clear();
 		variable_addresses.clear();
@@ -167,7 +169,11 @@ public:
 			reached_end = true;
 
 		SkipWhitespace();
-		Parse::Expression(*this);
+
+		if (is_assignment_expression)
+			Parse::Assignment(*this);
+		else
+			Parse::Expression(*this);
 		
 		if (!reached_end) {
 			parse_error = true;
@@ -193,8 +199,8 @@ public:
 	void Emit(Instruction instruction, Variant data = Variant())
 	{
 		RMLUI_ASSERTMSG(instruction != Instruction::Push && instruction != Instruction::Pop &&
-			instruction != Instruction::Arguments && instruction != Instruction::Variable,
-			"Use the Push(), Pop(), Arguments(), and Variable() procedures for stack manipulation and variable instructions.");
+			instruction != Instruction::Arguments && instruction != Instruction::Variable && instruction != Instruction::Assign,
+			"Use the Push(), Pop(), Arguments(), Variable(), and Assign() procedures for stack manipulation and variable instructions.");
 		program.push_back(InstructionData{ instruction, std::move(data) });
 	}
 	void Push() {
@@ -218,6 +224,15 @@ public:
 		program.push_back(InstructionData{ Instruction::Arguments, Variant(int(num_arguments)) });
 	}
 	void Variable(const String& name) {
+		VariableGetSet(name, false);
+	}
+	void Assign(const String& name) {
+		VariableGetSet(name, true);
+	}
+
+private:
+	void VariableGetSet(const String& name, bool is_assignment)
+	{
 		DataAddress address = expression_interface.ParseAddress(name);
 		if (address.empty()) {
 			Error(CreateString(name.size() + 50, "Could not find data variable with name '%s'.", name.c_str()));
@@ -225,10 +240,9 @@ public:
 		}
 		int index = int(variable_addresses.size());
 		variable_addresses.push_back(std::move(address));
-		program.push_back(InstructionData{ Instruction::Variable, Variant(int(index)) });
+		program.push_back(InstructionData{ is_assignment ? Instruction::Assign : Instruction::Variable, Variant(int(index)) });
 	}
 
-private:
 	const String expression;
 	DataExpressionInterface expression_interface;
 
@@ -246,6 +260,8 @@ private:
 namespace Parse {
 
 	// Forward declare all parse functions.
+	static void Assignment(DataParser& parser);
+
 	static void Expression(DataParser& parser);
 	static void Factor(DataParser& parser);
 	static void Term(DataParser& parser);
@@ -319,6 +335,30 @@ namespace Parse {
 	}
 
 	// Parser functions
+	static void Assignment(DataParser& parser)
+	{
+		bool looping = true;
+		while (looping)
+		{
+			const String variable_name = VariableName(parser);
+			if (variable_name.empty()) {
+				parser.Error("Expected a variable for assignment but got an empty name.");
+				return;
+			}
+
+			if (!parser.Match('='))
+				return;
+
+			Expression(parser);
+			parser.Assign(variable_name);
+
+			const char c = parser.Look();
+			if (c == ';')
+				parser.Match(';');
+			else if (c == '\0')
+				looping = false;
+		}
+	}
 	static void Expression(DataParser& parser)
 	{
 		Term(parser);
@@ -839,6 +879,18 @@ private:
 			arguments.clear();
 		}
 		break;
+		case Instruction::Assign:
+		{
+			size_t variable_index = size_t(data.Get<int>(-1));
+			if (variable_index < addresses.size())
+			{
+				if (!expression_interface.SetValue(addresses[variable_index], R))
+					return Error("Could not assign to variable.");
+			}
+			else
+				return Error("Variable address not found.");
+		}
+		break;
 		default:
 			RMLUI_ERRORMSG("Instruction not implemented."); break;
 		}
@@ -879,7 +931,7 @@ struct TestParser {
 		DataExpressionInterface interface(&model, nullptr);
 
 		DataParser parser(expression, interface);
-		if (parser.Parse())
+		if (parser.Parse(false))
 		{
 			Program program = parser.ReleaseProgram();
 			AddressList addresses = parser.ReleaseAddresses();
@@ -907,7 +959,7 @@ DataExpression::~DataExpression()
 {
 }
 
-bool DataExpression::Parse(const DataExpressionInterface& expression_interface)
+bool DataExpression::Parse(const DataExpressionInterface& expression_interface, bool is_assignment_expression)
 {
 	// @todo: Remove, debugging only
 	static TestParser test_parser;
@@ -917,7 +969,7 @@ bool DataExpression::Parse(const DataExpressionInterface& expression_interface)
 	//  5. Add tests
 
 	DataParser parser(expression, expression_interface);
-	if (!parser.Parse())
+	if (!parser.Parse(is_assignment_expression))
 		return false;
 
 	program = parser.ReleaseProgram();
@@ -959,6 +1011,17 @@ Variant DataExpressionInterface::GetValue(const DataAddress& address) const {
 	Variant result;
 	if (data_model)
 		data_model->GetValue(address, result);
+	return result;
+}
+
+bool DataExpressionInterface::SetValue(const DataAddress& address, const Variant& value) const
+{
+	bool result = false;
+	if (data_model)
+	{
+		if (Variable variable = data_model->GetVariable(address))
+			result = variable.Set(value);
+	}
 	return result;
 }
 

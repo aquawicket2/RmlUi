@@ -124,6 +124,7 @@ struct DefaultInstancers {
 	Ptr<DataViewInstancer> data_view_rml       = std::make_unique<DataViewInstancerDefault< DataViewRml >>();
 	Ptr<DataViewInstancer> data_view_style     = std::make_unique<DataViewInstancerDefault< DataViewStyle >>();
 	Ptr<DataViewInstancer> data_view_text      = std::make_unique<DataViewInstancerDefault< DataViewText >>();
+	Ptr<DataViewInstancer> data_view_value     = std::make_unique<DataViewInstancerDefault< DataViewValue >>();
 
 	Ptr<DataViewInstancer> structural_data_view_for = std::make_unique<DataViewInstancerDefault< DataViewFor >>();
 };
@@ -195,6 +196,7 @@ bool Factory::Initialise()
 	RegisterDataViewInstancer(default_instancers->data_view_rml.get(),       "rml", false);
 	RegisterDataViewInstancer(default_instancers->data_view_style.get(),     "style", false);
 	RegisterDataViewInstancer(default_instancers->data_view_text.get(),      "text", false);
+	RegisterDataViewInstancer(default_instancers->data_view_value.get(),     "value", false);
 
 	RegisterDataViewInstancer(default_instancers->structural_data_view_for.get(), "for", true);
 

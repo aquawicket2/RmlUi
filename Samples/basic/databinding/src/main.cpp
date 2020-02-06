@@ -113,6 +113,12 @@ struct Invader {
 	void GetColor(Rml::Core::Variant& variant) {
 		variant = "rgba(" + Rml::Core::ToString(color) + ')';
 	}
+
+	void OnClick(Rml::Core::DataModelHandle model_handle, Rml::Core::Event& ev, const Rml::Core::VariantList& arguments)
+	{
+		//ev.GetCurrentElement()->GetDataModel()->
+		//model_handle.DirtyVariable("invaders");
+	}
 };
 
 

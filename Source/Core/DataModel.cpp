@@ -190,11 +190,12 @@ Variable DataModel::GetVariable(const DataAddress& address) const
 void DataModel::DirtyVariable(const String& variable_name)
 {
 	RMLUI_ASSERTMSG(variables.count(variable_name) == 1, "Variable name not found among added variables.");
-	dirty_variables.insert(variable_name);
+	dirty_variables.emplace(variable_name);
 }
 
-bool DataModel::IsVariableDirty(const String& variable_name) const {
-	return (dirty_variables.count(variable_name) == 1);
+bool DataModel::IsVariableDirty(const String& variable_name) const
+{
+	return dirty_variables.count(variable_name) == 1;
 }
 
 bool DataModel::CallTransform(const String& name, Variant& inout_result, const VariantList& arguments) const
@@ -208,11 +209,7 @@ void DataModel::OnElementRemove(Element* element)
 {
 	EraseAliases(element);
 	views.OnElementRemove(element);
-}
-
-void DataModel::DirtyController(Element* element) 
-{
-	controllers.DirtyElement(*this, element);
+	controllers.OnElementRemove(element);
 }
 
 bool DataModel::Update() 

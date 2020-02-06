@@ -42,7 +42,6 @@ namespace Core {
 
 class Element;
 
-
 class RMLUICORE_API DataModel : NonCopyMoveable {
 public:
 	DataModel(const TransformFuncRegister* transform_register = nullptr) : transform_register(transform_register) {}
@@ -76,7 +75,6 @@ public:
 	bool CallTransform(const String& name, Variant& inout_result, const VariantList& arguments) const;
 
 	void OnElementRemove(Element* element);
-	void DirtyController(Element* element);
 
 	bool Update();
 
@@ -85,7 +83,7 @@ private:
 	DataControllers controllers;
 
 	UnorderedMap<String, Variable> variables;
-	SmallUnorderedSet<String> dirty_variables;
+	DirtyVariables dirty_variables;
 
 	using ScopedAliases = UnorderedMap<Element*, SmallUnorderedMap<String, DataAddress>>;
 	ScopedAliases aliases;

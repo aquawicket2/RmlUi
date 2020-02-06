@@ -426,7 +426,14 @@ void ElementUtilities::ApplyDataViewsControllers(Element* element)
 					else
 						Log::Message(Log::LT_WARNING, "Could not add data-value controller to element: %s", element->GetAddress().c_str());
 				}
-
+				else if (type_name == "event")
+				{
+					auto controller = std::make_unique<DataControllerEvent>(*data_model, element, data_expression);
+					if (controller)
+						data_model->AddController(std::move(controller));
+					else
+						Log::Message(Log::LT_WARNING, "Could not add data-event controller to element: %s", element->GetAddress().c_str());
+				}
 			}
 		}
 
@@ -450,7 +457,6 @@ bool ElementUtilities::ApplyStructuralDataViews(Element* element, const String& 
 
 			if (name.size() > 5 && name[0] == 'd' && name[1] == 'a' && name[2] == 't' && name[3] == 'a' && name[4] == '-')
 			{
-
 				const size_t data_type_end = name.find('-', 5);
 				const size_t count = (data_type_end == String::npos ? String::npos : data_type_end - 5);
 				const String view_type = name.substr(5, count);
