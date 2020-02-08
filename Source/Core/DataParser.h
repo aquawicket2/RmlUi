@@ -51,6 +51,7 @@ public:
     Variant GetValue(const DataAddress& address) const;
     bool SetValue(const DataAddress& address, const Variant& value) const;
     bool CallTransform(const String& name, Variant& inout_result, const VariantList& arguments);
+    bool EventCallback(const String& name, const VariantList& arguments);
 
 private:
     DataModel* data_model = nullptr;
