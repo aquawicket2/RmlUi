@@ -29,128 +29,35 @@
 #include "precompiled.h"
 #include "../../Include/RmlUi/Core/DataController.h"
 #include "../../Include/RmlUi/Core/DataModel.h"
+#include "DataParser.h"
+#include "EventSpecification.h"
 
 namespace Rml {
 namespace Core {
 
+
 DataController::DataController(Element* element) : attached_element(element->GetObserverPtr())
 {}
 
-Variable DataController::GetVariable() const {
-	if (Element* element = attached_element.get())
-	{
-		if (DataModel* model = element->GetDataModel())
-			return model->GetVariable(address);
-	}
-	return Variable();
-}
-
-void DataController::SetValue(const Variant& new_value)
-{
-	RMLUI_ASSERT(!address.empty());
-	if (value == new_value)
-		return;
-
-	Element* element = attached_element.get();
-	RMLUI_ASSERT(element);
-	if (!element)
-		return;
-
-	DataModel* model = element->GetDataModel();
-	RMLUI_ASSERT(model);
-	if (!model)
-		return;
-
-	if (Variable variable = model->GetVariable(address))
-	{
-		value = new_value;
-		variable.Set(value);
-		model->DirtyVariable(address.front().name);
-	}
-}
-
 DataController::~DataController()
 {}
-
-DataControllerValue::DataControllerValue(DataModel& model, Element* element, const String& in_variable_name) : DataController(element)
-{
-	DataAddress variable_address = model.ResolveAddress(in_variable_name, element);
-
-	if (model.GetVariable(variable_address) && !variable_address.empty())
-	{
-		SetAddress(std::move(variable_address));
-	}
-	element->AddEventListener(EventId::Change, this);
+Element* DataController::GetElement() const {
+	return attached_element.get();
 }
 
-DataControllerValue::~DataControllerValue()
-{
-	if (Element* element = GetElement())
-	{
-		element->RemoveEventListener(EventId::Change, this);
-	}
-}
-
-void DataControllerValue::ProcessEvent(Event& event)
-{
-	if (Element* element = GetElement())
-	{
-		if (Variant* new_value = element->GetAttribute("value"))
-		{
-			SetValue(*new_value);
-		}
-	}
+bool DataController::IsValid() const {
+	return static_cast<bool>(attached_element);
 }
 
 
 
-DataControllerEvent::DataControllerEvent(DataModel& model, Element* element, const String& in_variable_name) : DataController(element)
-{
-	RMLUI_ASSERT(element);
+DataControllers::DataControllers()
+{}
 
-	DataAddress variable_address = model.ResolveAddress(in_variable_name, element);
+DataControllers::~DataControllers()
+{}
 
-	// TODO add data assignment expression parser
-
-
-	if (model.GetVariable(variable_address) && !variable_address.empty())
-	{
-		SetAddress(std::move(variable_address));
-	}
-
-	element->AddEventListener(EventId::Click, this);
-}
-
-DataControllerEvent::~DataControllerEvent()
-{
-	if (Element* element = GetElement())
-	{
-		element->RemoveEventListener(EventId::Click, this);
-	}
-}
-
-void DataControllerEvent::ProcessEvent(Event& event)
-{
-	if (Element* element = GetElement())
-	{
-		static unsigned int counter = 0;
-		counter += 1;
-		element->SetInnerRML(CreateString(64, "We got a click! Number %d.", counter));
-
-
-		// TODO Run data assignment expression
-		//Element* element = GetElement();
-		//DataExpressionInterface interface(&model, element);
-
-		//if (element && GetExpression().Run(interface, variant))
-	}
-}
-
-
-
-
-
-void DataControllers::Add(UniquePtr<DataController> controller) {
+void DataControllers::Add(DataControllerPtr controller) {
 	RMLUI_ASSERT(controller);
 
 	Element* element = controller->GetElement();

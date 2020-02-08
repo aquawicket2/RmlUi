@@ -93,6 +93,14 @@ p.title
 .big {
 	font-size: 1.8em;
 }
+.mouse_detector {
+	width: 300px;
+	height: 70px;
+	line-height: 30px;
+	background-color: #909090;
+	border: 1px #666;
+	margin: 2em auto;
+}
 
 
 /***  Decorators  ***/
@@ -173,8 +181,11 @@ form h2
 	<p>Data binding demo. We rate this a good old {{rating}}!</p>
 	<input type="range" name="rating" min="0" max="100" step="1" value="50" data-value="rating" data-attribute="rating"/>
 	<div data-if="rating > 50">Thanks for the <span data-if="rating < 80">good</span><span data-if="rating >= 80">awesome</span> rating!</div>
-	<div style="width: 300px; height: 70px; background-color: #666; border: 1px #222;" data-event="hello_world">Click detector</div>
-	<div data-rml="'Rml from the attribute? <strong>Yup!</strong>'"></div>
+	<div class="mouse_detector"
+		data-event-mousemove="mouse_detector = 'x: ' + ev.mouse_x + '<br/>y: ' + ev.mouse_y"
+		data-event-click="hello_world = 'Hello click!'; mouse_detector = 'Clickety click.'"
+		data-rml="mouse_detector">
+	</div>
 	<h1>{{delightful_invader.name}}</h1>
 	<img data-attr-sprite="delightful_invader.sprite" data-style-image-color="rating < 80 ? 'black' : 'green'"/>
 	<p>

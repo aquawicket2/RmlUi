@@ -31,9 +31,7 @@
 
 #include "Header.h"
 #include "Types.h"
-#include "Variant.h"
-#include "DataVariable.h"
-#include "EventListener.h"
+#include "Traits.h"
 #include <unordered_map>
 
 namespace Rml {
@@ -42,75 +40,79 @@ namespace Core {
 class Element;
 class DataModel;
 
-class RMLUICORE_API DataController {
+
+class RMLUICORE_API DataControllerInstancer : public NonCopyMoveable {
 public:
-	bool UpdateVariable(DataModel& model);
+    DataControllerInstancer() {}
+    virtual ~DataControllerInstancer() {}
+    virtual DataControllerPtr InstanceController(Element* element) = 0;
+};
 
-    String GetVariableName() const {
-        return address.empty() ? String() : address.front().name;
+template<typename T>
+class DataControllerInstancerDefault final : public DataControllerInstancer {
+public:
+    DataControllerPtr InstanceController(Element* element) override {
+        return DataControllerPtr(new T(element));
     }
+};
 
-    Element* GetElement() const {
-        return attached_element.get();
-    }
 
-	explicit operator bool() const {
-		return !address.empty() && attached_element;
-	}
+/**
+    Data controller.
 
-    virtual ~DataController();
+    Data controllers are used to respond to some change in the document,
+    usually by setting data variables. Such document changes are usually
+    a result of user input.
+    A data controller is declared in the document by the element attribute:
+
+        data-[type]-[modifier]="[assignment_expression]"
+
+    This is similar to declaration of data views, except that controllers
+    instead take an assignment expression to set a variable. Note that, as
+    opposed to views, controllers only respond to certain changes in the
+    document, not to changed data variables.
+
+    The modifier may or may not be required depending on the data controller.
+
+ */
+
+class RMLUICORE_API DataController : public Releasable {
+public:
+	virtual ~DataController();
+
+    // Initialize the data controller.
+    // @param[in] model The data model the controller will be attached to.
+    // @param[in] element The element which spawned the controller.
+    // @param[in] expression The value of the element's 'data-' attribute which spawned the controller (see above).
+    // @param[in] modifier The modifier for the given controller type (see above).
+    // @return True on success.
+    virtual bool Initialize(DataModel& model, Element* element, const String& expression, const String& modifier) = 0;
+
+    // Returns the attached element if it still exists.
+    Element* GetElement() const;
+
+    // Returns true if the element still exists.
+    bool IsValid() const;
 
 protected:
 	DataController(Element* element);
 
-	void SetAddress(DataAddress new_address) {
-		address = std::move(new_address);
-	}
-
-    Variable GetVariable() const;
-
-    void SetValue(const Variant& new_value);
-
 private:
 	ObserverPtr<Element> attached_element;
-	DataAddress address;
-	Variant value;
 };
-
-
-// TODO: Listen to OnChange events instead?
-
-class DataControllerValue final : public DataController, private EventListener {
-public:
-	DataControllerValue(DataModel& model, Element* element, const String& in_variable_name);
-    ~DataControllerValue();
-
-protected:
-    void ProcessEvent(Event& event) override;
-};
-
-
-// TODO
-
-class DataControllerEvent final : public DataController, private EventListener {
-public:
-    DataControllerEvent(DataModel& model, Element* element, const String& in_variable_name);
-    ~DataControllerEvent();
-
-protected:
-    void ProcessEvent(Event& event) override;
-};
-
 
 
 class RMLUICORE_API DataControllers : NonCopyMoveable {
 public:
-	void Add(UniquePtr<DataController> controller);
+    DataControllers();
+    ~DataControllers();
+
+	void Add(DataControllerPtr controller);
 
     void OnElementRemove(Element* element);
 
 private:
-    using ElementControllersMap = std::unordered_multimap<Element*, UniquePtr<DataController>>;
+    using ElementControllersMap = std::unordered_multimap<Element*, DataControllerPtr>;
     ElementControllersMap controllers;
 };
 

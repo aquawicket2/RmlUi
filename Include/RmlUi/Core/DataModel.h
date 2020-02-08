@@ -47,7 +47,7 @@ public:
 	DataModel(const TransformFuncRegister* transform_register = nullptr) : transform_register(transform_register) {}
 
 	void AddView(DataViewPtr view) { views.Add(std::move(view)); }
-	void AddController(UniquePtr<DataController> controller) { controllers.Add(std::move(controller)); }
+	void AddController(DataControllerPtr controller) { controllers.Add(std::move(controller)); }
 
 	bool BindVariable(const String& name, Variable variable);
 

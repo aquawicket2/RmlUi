@@ -74,8 +74,41 @@ static DataAddress ParseAddress(const String& address_str)
 	return address;
 };
 
+// Returns an error string on error, or nullptr on success.
+static const char* LegalVariableName(const String& name)
+{
+	static SmallUnorderedSet<String> reserved_names{ "it", "ev", "true", "false" };
+	
+	if (name.empty())
+		return "Name cannot be empty.";
+	
+	const String name_lower = StringUtilities::ToLower(name);
+
+	const char first = name_lower.front();
+	if (!(first >= 'a' && first <= 'z'))
+		return "First character must be 'a-z' or 'A-Z'.";
+
+	for (const char c : name_lower)
+	{
+		if (!(c == '_' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')))
+			return "Variable name must strictly contain characters a-z, A-Z, 0-9 and under_score.";
+	}
+
+	if (reserved_names.count(name_lower) == 1)
+		return "Variable name is reserved.";
+
+	return nullptr;
+}
+
 bool DataModel::BindVariable(const String& name, Variable variable)
 {
+	const char* name_error_str = LegalVariableName(name);
+	if (name_error_str)
+	{
+		Log::Message(Log::LT_WARNING, "Could not bind data variable '%s'. %s", name.c_str(), name_error_str);
+		return false;
+	}
+
 	if (!variable)
 	{
 		Log::Message(Log::LT_WARNING, "Could not bind variable '%s' to data model, data type not registered.", name.c_str());

@@ -92,7 +92,7 @@ public:
 	// Returns the depth of the attached element in the document tree.
 	int GetElementDepth() const;
 	
-	// Returns true if the element still exists
+	// Returns true if the element still exists.
 	bool IsValid() const;
 	
 protected:

@@ -1001,26 +1001,43 @@ StringList DataExpression::GetVariableNameList() const
 	return list;
 }
 
-DataExpressionInterface::DataExpressionInterface(DataModel* data_model, Element* element) : data_model(data_model), element(element)
+DataExpressionInterface::DataExpressionInterface(DataModel* data_model, Element* element, Event* event) : data_model(data_model), element(element), event(event)
 {}
 
-DataAddress DataExpressionInterface::ParseAddress(const String& address_str) const {
+DataAddress DataExpressionInterface::ParseAddress(const String& address_str) const
+{
+	if (address_str.size() >= 4 && address_str[0] == 'e' && address_str[1] == 'v' && address_str[2] == '.')
+		return DataAddress{ AddressEntry("ev"), AddressEntry(address_str.substr(3)) };
+
 	return data_model ? data_model->ResolveAddress(address_str, element) : DataAddress();
 }
-Variant DataExpressionInterface::GetValue(const DataAddress& address) const {
+Variant DataExpressionInterface::GetValue(const DataAddress& address) const
+{
 	Variant result;
-	if (data_model)
+	if(event && address.size() == 2 && address.front().name == "ev")
+	{
+		auto& parameters = event->GetParameters();
+		auto it = parameters.find(address.back().name);
+		if (it != parameters.end())
+			result = it->second;
+	}
+	else if (data_model)
+	{
 		data_model->GetValue(address, result);
+	}
 	return result;
 }
 
 bool DataExpressionInterface::SetValue(const DataAddress& address, const Variant& value) const
 {
 	bool result = false;
-	if (data_model)
+	if (data_model && !address.empty())
 	{
 		if (Variable variable = data_model->GetVariable(address))
 			result = variable.Set(value);
+
+		if (result)
+			data_model->DirtyVariable(address.front().name);
 	}
 	return result;
 }

@@ -124,8 +124,9 @@ struct Invader {
 
 struct MyData {
 	Rml::Core::String hello_world = "Hello World!";
-	int rating = 99;
+	Rml::Core::String mouse_detector = "Mouse-move <em>Detector</em>.";
 
+	int rating = 99;
 
 	Invader delightful_invader{ "Delightful invader", "icon-invader" };
 
@@ -152,6 +153,7 @@ bool SetupDataBinding(Rml::Core::Context* context)
 		return false;
 
 	my_model.Bind("hello_world", &my_data.hello_world);
+	my_model.Bind("mouse_detector", &my_data.mouse_detector);
 	my_model.Bind("rating", &my_data.rating);
 	my_model.BindFunc("good_rating", &HasGoodRating);
 	my_model.BindFunc("great_rating", [](Rml::Core::Variant& variant) {

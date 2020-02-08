@@ -403,13 +403,13 @@ void ElementUtilities::ApplyDataViewsControllers(Element* element)
 
 				const String data_expression = attribute.second.Get<String>();
 
+				String modifier;
+				const size_t label_offset = sizeof("data") + type_name.size() + 1;
+				if (label_offset < name.size())
+					modifier = name.substr(label_offset);
+
 				if (DataViewPtr view = Factory::InstanceDataView(type_name, element, false))
 				{
-					String modifier;
-					const size_t label_offset = sizeof("data") + type_name.size() + 1;
-					if (label_offset < name.size())
-						modifier = name.substr(label_offset);
-
 					bool success = view->Initialize(*data_model, element, data_expression, modifier);
 					if (success)
 						data_model->AddView(std::move(view));
@@ -417,22 +417,13 @@ void ElementUtilities::ApplyDataViewsControllers(Element* element)
 						Log::Message(Log::LT_WARNING, "Could not add data-%s view to element: %s", type_name.c_str(), element->GetAddress().c_str());
 				}
 
-				if (type_name == "value")
+				if (DataControllerPtr controller = Factory::InstanceDataController(type_name, element))
 				{
-					// TODO: Make the same abstraction for controllers as for views (or maybe make them into views instead if possible?)
-					auto controller = std::make_unique<DataControllerValue>(*data_model, element, data_expression);
-					if (controller)
+					bool success = controller->Initialize(*data_model, element, data_expression, modifier);
+					if (success)
 						data_model->AddController(std::move(controller));
 					else
-						Log::Message(Log::LT_WARNING, "Could not add data-value controller to element: %s", element->GetAddress().c_str());
-				}
-				else if (type_name == "event")
-				{
-					auto controller = std::make_unique<DataControllerEvent>(*data_model, element, data_expression);
-					if (controller)
-						data_model->AddController(std::move(controller));
-					else
-						Log::Message(Log::LT_WARNING, "Could not add data-event controller to element: %s", element->GetAddress().c_str());
+						Log::Message(Log::LT_WARNING, "Could not add data-%s controller to element: %s", type_name.c_str(), element->GetAddress().c_str());
 				}
 			}
 		}

@@ -49,7 +49,7 @@ int DataView::GetElementDepth() const {
 }
 
 bool DataView::IsValid() const {
-	return (bool)attached_element;
+	return static_cast<bool>(attached_element);
 }
 
 DataView::DataView(Element* element) : attached_element(element->GetObserverPtr()), element_depth(0) {
