@@ -1010,6 +1010,19 @@ struct TestParser {
 		result = TestExpression("!!('fa' + 'lse')", "0");
 		result = TestExpression("!!('tr' + 'ue')", "1");
 		result = TestExpression("'fox' + 'dog' ? 'FoxyDog' : 'hot' + 'dog' | to_upper", "HOTDOG");
+
+		result = TestExpression("3.62345 | round", "4");
+		result = TestExpression("3.62345 | format(0)", "4");
+		result = TestExpression("3.62345 | format(2)", "3.62");
+		result = TestExpression("3.62345 | format(10)", "3.6234500000");
+		result = TestExpression("3.62345 | format(10, true)", "3.62345");
+		result = TestExpression("3.62345 | round | format(2)", "4.00");
+		result = TestExpression("3.0001 | format(2, false)", "3.00");
+		result = TestExpression("3.0001 | format(2, true)"), "3";
+
+		result = TestExpression("0.2 + 3.42345 | round", "4");
+		result = TestExpression("(3.42345 | round) + 0.2", "3.2");
+		result = TestExpression("(3.42345 | format(0)) + 0.2", "30.2"); // Here, format(0) returns a string, so the + means string concatenation.
 	}
 
 	String TestExpression(String expression, String expected = String())
