@@ -100,9 +100,13 @@ static const char* LegalVariableName(const String& name)
 	return nullptr;
 }
 
-void DataModel::AddView(DataViewPtr view) { views.Add(std::move(view)); }
+void DataModel::AddView(DataViewPtr view) {
+	views.Add(std::move(view));
+}
 
-void DataModel::AddController(DataControllerPtr controller) { controllers.Add(std::move(controller)); }
+void DataModel::AddController(DataControllerPtr controller) {
+	controllers.Add(std::move(controller));
+}
 
 bool DataModel::BindVariable(const String& name, DataVariable variable)
 {
