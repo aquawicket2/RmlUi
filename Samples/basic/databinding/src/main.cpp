@@ -156,7 +156,7 @@ void HasGoodRating(Rml::Core::Variant& variant) {
 
 struct InvaderModelData {
 	double time_last_invader_spawn = 0;
-	double time_last_invader_shot = 0;
+	double time_last_weapons_launched = 0;
 
 	float incoming_invaders_rate = 10; // Per minute
 
@@ -178,7 +178,6 @@ Rml::Core::DataModelHandle invaders_model, my_model;
 
 bool SetupDataBinding(Rml::Core::Context* context)
 {
-
 	// The invaders model
 	{
 		Rml::Core::DataModelConstructor constructor = context->CreateDataModel("invaders");
@@ -290,7 +289,7 @@ void GameLoop()
 		invaders_data.time_last_invader_spawn = t;
 	}
 
-	if (t >= invaders_data.time_last_invader_shot + 1.0)
+	if (t >= invaders_data.time_last_weapons_launched + 1.0)
 	{
 		if (!invaders_data.invaders.empty())
 		{
@@ -301,7 +300,7 @@ void GameLoop()
 
 			invaders_model.DirtyVariable("invaders");
 		}
-		invaders_data.time_last_invader_shot = t;
+		invaders_data.time_last_weapons_launched = t;
 	}
 
 	my_model.Update();

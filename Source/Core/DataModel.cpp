@@ -77,7 +77,7 @@ static DataAddress ParseAddress(const String& address_str)
 // Returns an error string on error, or nullptr on success.
 static const char* LegalVariableName(const String& name)
 {
-	static SmallUnorderedSet<String> reserved_names{ "it", "ev", "true", "false", "size" };
+	static SmallUnorderedSet<String> reserved_names{ "it", "ev", "true", "false", "size", "literal" };
 	
 	if (name.empty())
 		return "Name cannot be empty.";
@@ -269,23 +269,31 @@ DataAddress DataModel::ResolveAddress(const String& address_str, Element* elemen
 
 DataVariable DataModel::GetVariable(const DataAddress& address) const
 {
-	if (address.empty() || address.front().name.empty())
+	if (address.empty())
 		return DataVariable();
 
 	auto it = variables.find(address.front().name);
-	if (it == variables.end())
-		return DataVariable();
-
-	DataVariable variable = it->second;
-
-	for (int i = 1; i < (int)address.size() && variable; i++)
+	if (it != variables.end())
 	{
-		variable = variable.Child(address[i]);
-		if (!variable)
-			return DataVariable();
+		DataVariable variable = it->second;
+
+		for (int i = 1; i < (int)address.size() && variable; i++)
+		{
+			variable = variable.Child(address[i]);
+			if (!variable)
+				return DataVariable();
+		}
+
+		return variable;
 	}
 
-	return variable;
+	if (address[0].name == "literal")
+	{
+		if (address.size() > 2 && address[1].name == "int")
+			return MakeLiteralIntVariable(address[2].index);
+	}
+
+	return DataVariable();
 }
 
 const DataEventFunc* DataModel::GetEventCallback(const String& name)

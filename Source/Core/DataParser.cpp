@@ -1018,7 +1018,7 @@ struct TestParser {
 		result = TestExpression("3.62345 | format(10, true)", "3.62345");
 		result = TestExpression("3.62345 | round | format(2)", "4.00");
 		result = TestExpression("3.0001 | format(2, false)", "3.00");
-		result = TestExpression("3.0001 | format(2, true)"), "3";
+		result = TestExpression("3.0001 | format(2, true)", "3");
 
 		result = TestExpression("0.2 + 3.42345 | round", "4");
 		result = TestExpression("(3.42345 | round) + 0.2", "3.2");
