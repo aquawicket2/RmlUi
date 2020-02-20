@@ -383,18 +383,18 @@ static struct TestDataVariables {
 
 			if (auto fun_handle = handle.RegisterStruct<FunData>())
 			{
-				fun_handle.AddMember("i", &FunData::i);
-				fun_handle.AddMember("x", &FunData::x);
-				fun_handle.AddMember("magic", &FunData::magic);
+				fun_handle.RegisterMember("i", &FunData::i);
+				fun_handle.RegisterMember("x", &FunData::x);
+				fun_handle.RegisterMember("magic", &FunData::magic);
 			}
 
 			handle.RegisterArray<FunArray>();
 
 			if (auto smart_handle = handle.RegisterStruct<SmartData>())
 			{
-				smart_handle.AddMember("valid", &SmartData::valid);
-				smart_handle.AddMember("fun", &SmartData::fun);
-				smart_handle.AddMember("more_fun", &SmartData::more_fun);
+				smart_handle.RegisterMember("valid", &SmartData::valid);
+				smart_handle.RegisterMember("fun", &SmartData::fun);
+				smart_handle.RegisterMember("more_fun", &SmartData::more_fun);
 			}
 		}
 

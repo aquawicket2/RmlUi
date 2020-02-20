@@ -178,9 +178,9 @@ private:
 };
 
 template <typename Object, typename MemberType>
-class StructMemberDefault final : public StructMember {
+class StructMemberObject final : public StructMember {
 public:
-	StructMemberDefault(VariableDefinition* definition, MemberType Object::* member_ptr) : StructMember(definition), member_ptr(member_ptr) {}
+	StructMemberObject(VariableDefinition* definition, MemberType Object::* member_ptr) : StructMember(definition), member_ptr(member_ptr) {}
 
 	void* GetPointer(void* base_ptr) override {
 		return &(static_cast<Object*>(base_ptr)->*member_ptr);

@@ -990,7 +990,7 @@ struct TestParser {
 		result = TestExpression("true != false",  "1");
 		result = TestExpression("true",           "1");
 
-		result = TestExpression("true || false ? (true && 3==1+2 ? 'Absolutely!' : 'well..') : 'no'",  "Absolutely!");
+		result = TestExpression("true || false ? true && 3==1+2 ? 'Absolutely!' : 'well..' : 'no'",  "Absolutely!");
 		result = TestExpression(R"('It\'s a fit')",  R"(It's a fit)");
 		result = TestExpression("2 * 2",           "4");
 		result = TestExpression("50000 / 1500",    "33.333");
@@ -999,7 +999,7 @@ struct TestParser {
 		result = TestExpression("2*(-2)/4",        "-1");
 		result = TestExpression("5.2 + 19 + 'px'", "24.2px");
 
-		result = TestExpression("radius + 'm'",    "8.7m");
+		result = TestExpression("(radius | format(2)) + 'm'",    "8.70m");
 		result = TestExpression("radius < 10.5 ? 'smaller' : 'larger'",  "smaller");
 		TestAssignment("radius = 15");
 		result = TestExpression("radius < 10.5 ? 'smaller' : 'larger'",  "larger");

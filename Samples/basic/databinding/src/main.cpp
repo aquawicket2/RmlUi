@@ -114,6 +114,13 @@ struct Invader {
 	void GetColor(Rml::Core::Variant& variant) {
 		variant = "rgba(" + Rml::Core::ToString(color) + ')';
 	}
+	void SetColor(const Rml::Core::Variant& variant) {
+		using namespace Rml::Core;
+		String str = variant.Get<String>();
+		if (str.size() > 6)
+			str = str.substr(5, str.size() - 6);
+		color = Rml::Core::FromString<Colourb>(variant.Get<String>());
+	}
 };
 
 
@@ -190,11 +197,11 @@ bool SetupDataBinding(Rml::Core::Context* context)
 
 		if (auto invader_handle = constructor.RegisterStruct<Invader>())
 		{
-			invader_handle.AddMember("name", &Invader::name);
-			invader_handle.AddMember("sprite", &Invader::sprite);
-			invader_handle.AddMember("damage", &Invader::damage);
-			invader_handle.AddMember("danger_rating", &Invader::danger_rating);
-			invader_handle.AddMemberFunc("color", &Invader::GetColor);
+			invader_handle.RegisterMember("name", &Invader::name);
+			invader_handle.RegisterMember("sprite", &Invader::sprite);
+			invader_handle.RegisterMember("damage", &Invader::damage);
+			invader_handle.RegisterMember("danger_rating", &Invader::danger_rating);
+			invader_handle.RegisterMemberFunc("color", &Invader::GetColor, &Invader::SetColor);
 		}
 
 		constructor.RegisterArray<std::vector<Invader>>();
@@ -229,8 +236,8 @@ bool SetupDataBinding(Rml::Core::Context* context)
 
 		if (auto vec2_handle = constructor.RegisterStruct<Rml::Core::Vector2f>())
 		{
-			vec2_handle.AddMember("x", &Rml::Core::Vector2f::x);
-			vec2_handle.AddMember("y", &Rml::Core::Vector2f::y);
+			vec2_handle.RegisterMember("x", &Rml::Core::Vector2f::x);
+			vec2_handle.RegisterMember("y", &Rml::Core::Vector2f::y);
 		}
 
 		constructor.RegisterArray<std::vector<Rml::Core::Vector2f>>();
